@@ -55,7 +55,17 @@ export default function Home() {
       messagingRef.current.addReceivedMessage(fromUser, message);
     }
   };
-
+  
+  // Handle call rejection
+  const handleCallRejected = () => {
+    setIncomingCall(null);
+  };
+  
+  // Handle hiding incoming call without accepting/rejecting
+  const handleCallHidden = () => {
+    setIncomingCall(null);
+  };
+  
   // Handle call acceptance
   const handleCallAccepted = () => {
     setInCall(true);
@@ -424,6 +434,8 @@ export default function Home() {
         <IncomingCall
           invitation={incomingCall}
           onAccept={handleCallAccepted}
+          onReject={handleCallRejected}
+          onHide={handleCallHidden}
         />
       )}
     </div>

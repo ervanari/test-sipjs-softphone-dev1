@@ -692,6 +692,10 @@ export function hangupCall() {
             if (session instanceof Inviter) {
                 session.cancel();
             }
+            // Check if the session is an Invitation (incoming call) and reject it
+            else if (session instanceof Invitation) {
+                session.reject();
+            }
         }
 
         // Clean up the session reference immediately to prevent further operations on it

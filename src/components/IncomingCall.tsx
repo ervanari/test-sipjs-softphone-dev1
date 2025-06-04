@@ -5,9 +5,11 @@ import { acceptCall, hangupCall } from "../lib/sipClient";
 interface IncomingCallProps {
   invitation: any;
   onAccept: () => void;
+  onReject?: () => void;
+  onHide?: () => void;
 }
 
-export default function IncomingCall({ invitation, onAccept }: IncomingCallProps) {
+export default function IncomingCall({ invitation, onAccept, onReject, onHide }: IncomingCallProps) {
   const audioContextRef = useRef<AudioContext | null>(null);
   const oscillatorRef = useRef<OscillatorNode | null>(null);
   const gainNodeRef = useRef<GainNode | null>(null);
@@ -105,6 +107,26 @@ export default function IncomingCall({ invitation, onAccept }: IncomingCallProps
 
     // Reject the call
     hangupCall();
+
+    // Notify parent component if callback exists
+    if (onReject) {
+      onReject();
+    }
+  };
+
+  const handleHide = () => {
+    // Stop ringtone
+    if (oscillatorRef.current) {
+      oscillatorRef.current.stop();
+    }
+    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+      audioContextRef.current.close();
+    }
+
+    // Notify parent component if callback exists
+    if (onHide) {
+      onHide();
+    }
   };
 
   // Extract username from SIP URI for display
@@ -115,7 +137,18 @@ export default function IncomingCall({ invitation, onAccept }: IncomingCallProps
 
   return (
     <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-75 z-50">
-      <div className="max-w-md w-full">
+      <div className="max-w-md w-full relative">
+        {/* Close/Hide Button */}
+        <button
+          onClick={handleHide}
+          className="absolute top-2 right-2 w-8 h-8 bg-gray-700 hover:bg-gray-600 text-white rounded-full flex items-center justify-center transition duration-200"
+          aria-label="Hide incoming call"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+            <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+          </svg>
+        </button>
+
         {/* Caller Info */}
         <div className="text-center mb-8">
           <div className="w-24 h-24 bg-[#128C7E] rounded-full flex items-center justify-center mx-auto mb-6 animate-pulse">
