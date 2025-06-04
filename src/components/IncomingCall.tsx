@@ -10,57 +10,26 @@ interface IncomingCallProps {
 }
 
 export default function IncomingCall({ invitation, onAccept, onReject, onHide }: IncomingCallProps) {
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const oscillatorRef = useRef<OscillatorNode | null>(null);
-  const gainNodeRef = useRef<GainNode | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
-    // Create audio context and oscillator for ringtone
+    // Create audio element for ringtone
     try {
-      audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-      oscillatorRef.current = audioContextRef.current.createOscillator();
-      gainNodeRef.current = audioContextRef.current.createGain();
-
-      // Configure oscillator
-      oscillatorRef.current.type = 'sine';
-      oscillatorRef.current.frequency.setValueAtTime(440, audioContextRef.current.currentTime); // A4 note
-
-      // Connect nodes
-      oscillatorRef.current.connect(gainNodeRef.current);
-      gainNodeRef.current.connect(audioContextRef.current.destination);
-
-      // Set volume
-      gainNodeRef.current.gain.setValueAtTime(0.5, audioContextRef.current.currentTime);
-
-      // Start oscillator with ringtone pattern
-      oscillatorRef.current.start();
-
-      // Create ringtone pattern (alternating volume)
-      const ringPattern = () => {
-        if (gainNodeRef.current && audioContextRef.current) {
-          gainNodeRef.current.gain.setValueAtTime(0.5, audioContextRef.current.currentTime);
-          gainNodeRef.current.gain.setValueAtTime(0, audioContextRef.current.currentTime + 0.5);
-          gainNodeRef.current.gain.setValueAtTime(0.5, audioContextRef.current.currentTime + 1);
-          gainNodeRef.current.gain.setValueAtTime(0, audioContextRef.current.currentTime + 1.5);
-        }
-      };
-
-      // Start pattern and repeat
-      ringPattern();
-      const intervalId = setInterval(ringPattern, 2000);
+      audioRef.current = new Audio('/ringing.wav');
+      audioRef.current.loop = true;
+      audioRef.current.play().catch(err => {
+        console.error("Failed to play ringtone:", err);
+      });
 
       // Cleanup function
       return () => {
-        clearInterval(intervalId);
-        if (oscillatorRef.current) {
-          oscillatorRef.current.stop();
-        }
-        if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
-          audioContextRef.current.close();
+        if (audioRef.current) {
+          audioRef.current.pause();
+          audioRef.current.currentTime = 0;
         }
       };
     } catch (err) {
-      console.error("Failed to create audio context for ringtone:", err);
+      console.error("Failed to create audio for ringtone:", err);
     }
   }, []);
 
@@ -74,11 +43,9 @@ export default function IncomingCall({ invitation, onAccept, onReject, onHide }:
     setAcceptError(null);
 
     // Stop ringtone
-    if (oscillatorRef.current) {
-      oscillatorRef.current.stop();
-    }
-    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
-      audioContextRef.current.close();
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
     }
 
     try {
@@ -98,11 +65,9 @@ export default function IncomingCall({ invitation, onAccept, onReject, onHide }:
     if (!invitation) return;
 
     // Stop ringtone
-    if (oscillatorRef.current) {
-      oscillatorRef.current.stop();
-    }
-    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
-      audioContextRef.current.close();
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
     }
 
     // Reject the call
@@ -116,11 +81,9 @@ export default function IncomingCall({ invitation, onAccept, onReject, onHide }:
 
   const handleHide = () => {
     // Stop ringtone
-    if (oscillatorRef.current) {
-      oscillatorRef.current.stop();
-    }
-    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
-      audioContextRef.current.close();
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
     }
 
     // Notify parent component if callback exists
