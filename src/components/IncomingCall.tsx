@@ -11,15 +11,30 @@ interface IncomingCallProps {
 
 export default function IncomingCall({ invitation, onAccept, onReject, onHide }: IncomingCallProps) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [audioPlayError, setAudioPlayError] = useState(false);
+
+  // Function to play ringtone that can be called after user interaction
+  const playRingtone = () => {
+    if (audioRef.current) {
+      audioRef.current.play()
+        .then(() => {
+          setAudioPlayError(false);
+        })
+        .catch(err => {
+          console.error("Failed to play ringtone:", err);
+          setAudioPlayError(true);
+        });
+    }
+  };
 
   useEffect(() => {
     // Create audio element for ringtone
     try {
       audioRef.current = new Audio('/ringing.wav');
       audioRef.current.loop = true;
-      audioRef.current.play().catch(err => {
-        console.error("Failed to play ringtone:", err);
-      });
+
+      // Try to play, but it might fail due to browser autoplay policy
+      playRingtone();
 
       // Cleanup function
       return () => {
@@ -30,6 +45,7 @@ export default function IncomingCall({ invitation, onAccept, onReject, onHide }:
       };
     } catch (err) {
       console.error("Failed to create audio for ringtone:", err);
+      setAudioPlayError(true);
     }
   }, []);
 
@@ -101,17 +117,6 @@ export default function IncomingCall({ invitation, onAccept, onReject, onHide }:
   return (
     <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-75 z-50">
       <div className="max-w-md w-full relative">
-        {/* Close/Hide Button */}
-        <button
-          onClick={handleHide}
-          className="absolute top-2 right-2 w-8 h-8 bg-gray-700 hover:bg-gray-600 text-white rounded-full flex items-center justify-center transition duration-200"
-          aria-label="Hide incoming call"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-            <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-          </svg>
-        </button>
-
         {/* Caller Info */}
         <div className="text-center mb-8">
           <div className="w-24 h-24 bg-[#128C7E] rounded-full flex items-center justify-center mx-auto mb-6 animate-pulse">
@@ -185,6 +190,21 @@ export default function IncomingCall({ invitation, onAccept, onReject, onHide }:
         <div className="text-center mt-8 text-gray-400 text-sm">
           Tap a button to respond
         </div>
+
+        {/* Sound enable button - only shown if audio playback failed */}
+        {audioPlayError && (
+          <div className="mt-4 text-center">
+            <button
+              onClick={playRingtone}
+              className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-md transition duration-200"
+            >
+              Enable Ringtone
+            </button>
+            <p className="mt-2 text-xs text-gray-400">
+              Browser blocked automatic sound playback. Click to enable ringtone.
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );
