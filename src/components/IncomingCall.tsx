@@ -9,9 +9,27 @@ interface IncomingCallProps {
   onHide?: () => void;
 }
 
+// Function to check if the invitation includes video
+const hasVideo = (invitation: any): boolean => {
+  try {
+    // Check if the invitation has a request with an SDP body
+    if (invitation?.request?.body) {
+      const sdp = invitation.request.body;
+      // Check if the SDP contains a video media section
+      return sdp.includes('m=video');
+    }
+  } catch (error) {
+    console.error("Error checking for video in invitation:", error);
+  }
+  // Default to false if we can't determine
+  return false;
+};
+
 export default function IncomingCall({ invitation, onAccept, onReject, onHide }: IncomingCallProps) {
+  console.log("IncomingCall component rendered", invitation);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [audioPlayError, setAudioPlayError] = useState(false);
+  const isVideoCall = hasVideo(invitation);
 
   // Function to play ringtone that can be called after user interaction
   const playRingtone = () => {
@@ -150,27 +168,30 @@ export default function IncomingCall({ invitation, onAccept, onReject, onHide }:
             </svg>
           </button>
 
-          {/* Accept Audio Button */}
-          <button
-            onClick={() => handleAccept(false)}
-            className="w-16 h-16 bg-[#25D366] hover:bg-[#1faa52] text-white rounded-full flex items-center justify-center transition duration-200 transform hover:scale-105"
-            aria-label="Accept audio call"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" viewBox="0 0 20 20" fill="currentColor">
-              <path d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 5V3z" />
-            </svg>
-          </button>
-
-          {/* Accept Video Button */}
-          <button
-            onClick={() => handleAccept(true)}
-            className="w-16 h-16 bg-[#128C7E] hover:bg-[#0e6b5e] text-white rounded-full flex items-center justify-center transition duration-200 transform hover:scale-105"
-            aria-label="Accept video call"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" viewBox="0 0 20 20" fill="currentColor">
-              <path d="M2 6a2 2 0 012-2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6zM14.553 7.106A1 1 0 0014 8v4a1 1 0 00.553.894l2 1A1 1 0 0018 13V7a1 1 0 00-1.447-.894l-2 1z" />
-            </svg>
-          </button>
+          {/* Conditionally render either Audio or Video Accept Button based on call type */}
+          {isVideoCall ? (
+            /* Accept Video Button */
+            <button
+              onClick={() => handleAccept(true)}
+              className="w-16 h-16 bg-[#128C7E] hover:bg-[#0e6b5e] text-white rounded-full flex items-center justify-center transition duration-200 transform hover:scale-105"
+              aria-label="Accept video call"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" viewBox="0 0 20 20" fill="currentColor">
+                <path d="M2 6a2 2 0 012-2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6zM14.553 7.106A1 1 0 0014 8v4a1 1 0 00.553.894l2 1A1 1 0 0018 13V7a1 1 0 00-1.447-.894l-2 1z" />
+              </svg>
+            </button>
+          ) : (
+            /* Accept Audio Button */
+            <button
+              onClick={() => handleAccept(false)}
+              className="w-16 h-16 bg-[#25D366] hover:bg-[#1faa52] text-white rounded-full flex items-center justify-center transition duration-200 transform hover:scale-105"
+              aria-label="Accept audio call"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" viewBox="0 0 20 20" fill="currentColor">
+                <path d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 5V3z" />
+              </svg>
+            </button>
+          )}
         </div>
 
         {/* Call Type Labels */}
@@ -178,12 +199,15 @@ export default function IncomingCall({ invitation, onAccept, onReject, onHide }:
           <div className="w-16 text-red-400 text-sm font-medium">
             Decline
           </div>
-          <div className="w-16 text-green-400 text-sm font-medium">
-            Audio
-          </div>
-          <div className="w-16 text-[#128C7E] text-sm font-medium">
-            Video
-          </div>
+          {isVideoCall ? (
+            <div className="w-16 text-[#128C7E] text-sm font-medium">
+              Video
+            </div>
+          ) : (
+            <div className="w-16 text-green-400 text-sm font-medium">
+              Audio
+            </div>
+          )}
         </div>
 
         {/* Swipe instruction */}
