@@ -9,7 +9,7 @@ interface DialerProps {
 
 export default function Dialer({ domain, onCallInitiated }: DialerProps) {
   const [target, setTarget] = useState("");
-  const [isVideo, setIsVideo] = useState(true);
+  const [isVideo, setIsVideo] = useState(false);
   const [isCallInProgress, setIsCallInProgress] = useState(false);
   const [callError, setCallError] = useState<string | null>(null);
 

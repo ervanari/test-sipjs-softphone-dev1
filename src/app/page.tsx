@@ -11,6 +11,7 @@ export default function Home() {
   // SIP registration state
   const [isRegistered, setIsRegistered] = useState(false);
   const [domain, setDomain] = useState("");
+  const [username, setUsername] = useState("");
 
   // Call state
   const [incomingCall, setIncomingCall] = useState<any>(null);
@@ -33,9 +34,10 @@ export default function Home() {
   const callControlsRef = useRef<any>(null);
 
   // Handle successful registration
-  const handleRegistered = (domainName: string) => {
+  const handleRegistered = (domainName: string, userName: string) => {
     setIsRegistered(true);
     setDomain(domainName);
+    setUsername(userName);
   };
 
   // Handle incoming call
@@ -315,7 +317,7 @@ export default function Home() {
           <div className="text-sm">
             <span className="inline-flex items-center">
               <span className="w-2 h-2 bg-green-400 rounded-full mr-2"></span>
-              Connected as {domain}
+              Connected as {username}@{domain}
             </span>
           </div>
         </div>

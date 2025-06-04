@@ -117,6 +117,7 @@ export function initSIP(config: SIPConfig): Promise<void> {
                 registerer = new Registerer(ua);
 
                 registerer.stateChange.addListener((state) => {
+                    console.log(`SIP registration state changed to: ${state}`);
                     switch (state) {
                         case "Registered":
                             console.log("✅ SIP connected and registered");
