@@ -20,7 +20,8 @@ export default function Dialer({ domain, onCallInitiated }: DialerProps) {
     setCallError(null);
 
     try {
-      const session = await makeCall(`sip:${target}@${domain}`, isVideo);
+      // Pass the target as is, the makeCall function will handle URI formatting
+      const session = await makeCall(target, isVideo);
       if (onCallInitiated && session) {
         onCallInitiated(session);
       }

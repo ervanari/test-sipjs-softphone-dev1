@@ -13,12 +13,14 @@ interface SIPData {
   username: string;
   password: string;
   wsServer: string;
+  domain: string;
 }
 
 export default function SIPRegistration({ onRegistered, onIncomingCall, onMessageReceived }: SIPRegistrationProps) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [wsServer] = useState("wss://jsmwebrtc.my.id:443/ws"); // Default WebSocket server, no longer editable
+  const [domain, setDomain] = useState("jsmwebrtc.my.id"); // Default domain
+  const [wsServer, setWsServer] = useState("wss://jsmwebrtc.my.id:443/ws"); // Default WebSocket server URL
   const [isRegistering, setIsRegistering] = useState(false);
   const [isRegistered, setIsRegistered] = useState(false);
   const [error, setError] = useState("");
@@ -35,25 +37,29 @@ export default function SIPRegistration({ onRegistered, onIncomingCall, onMessag
         // Update form fields with saved data
         setUsername(data.username);
         setPassword(data.password);
+        setWsServer(data.wsServer);
+        // Set domain if available in saved data, otherwise use default
+        if (data.domain) {
+          setDomain(data.domain);
+        }
 
         // Auto-connect with saved credentials
         setAutoConnecting(true);
-        registerWithSIP(data.username, data.password, wsServer);
+        registerWithSIP(data.username, data.password, data.wsServer, data.domain || domain);
       } catch (err) {
         console.error("Error parsing saved SIP data:", err);
       }
     }
-  }, [wsServer]);
+  }, []);
 
   // Function to register with SIP
-  const registerWithSIP = async (usernameValue: string, passwordValue: string, wsServerValue: string) => {
+  const registerWithSIP = async (usernameValue: string, passwordValue: string, wsServerValue: string, domainValue: string = domain) => {
     setIsRegistering(true);
     setError("");
 
     try {
-      // Construct SIP URI from username
-      const domain = "jsmwebrtc.my.id"; // Default domain
-      const sipUriValue = `sip:${usernameValue}@${domain}`;
+      // Construct SIP URI from username and domain
+      const sipUriValue = `sip:${usernameValue}@${domainValue}`;
 
       console.log("SIP URI:", sipUriValue);
 
@@ -61,7 +67,8 @@ export default function SIPRegistration({ onRegistered, onIncomingCall, onMessag
       const sipData: SIPData = {
         username: usernameValue,
         password: passwordValue,
-        wsServer: wsServerValue
+        wsServer: wsServerValue,
+        domain: domainValue
       };
       localStorage.setItem('sipData', JSON.stringify(sipData));
 
@@ -87,7 +94,7 @@ export default function SIPRegistration({ onRegistered, onIncomingCall, onMessag
 
       // Only set as registered if initSIP Promise resolves successfully
       setIsRegistered(true);
-      onRegistered(domain, usernameValue);
+      onRegistered(domainValue, usernameValue);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to register SIP account");
       console.error("SIP registration error:", err);
@@ -99,7 +106,7 @@ export default function SIPRegistration({ onRegistered, onIncomingCall, onMessag
   };
 
   const handleRegister = async () => {
-    await registerWithSIP(username, password, wsServer);
+    await registerWithSIP(username, password, wsServer, domain);
   };
 
   if (isRegistered) {
@@ -158,6 +165,21 @@ export default function SIPRegistration({ onRegistered, onIncomingCall, onMessag
         </div>
 
         <div>
+          <label htmlFor="domain" className="block text-sm font-medium text-gray-700 mb-1">
+            Domain
+          </label>
+          <input
+            id="domain"
+            type="text"
+            value={domain}
+            onChange={(e) => setDomain(e.target.value)}
+            placeholder="Domain"
+            className="w-full text-gray-800 p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#128C7E]"
+            required
+          />
+        </div>
+
+        <div>
           <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
             Password
           </label>
@@ -172,9 +194,24 @@ export default function SIPRegistration({ onRegistered, onIncomingCall, onMessag
           />
         </div>
 
+        <div>
+          <label htmlFor="wsServer" className="block text-sm font-medium text-gray-700 mb-1">
+            WebSocket Server
+          </label>
+          <input
+            id="wsServer"
+            type="text"
+            value={wsServer}
+            onChange={(e) => setWsServer(e.target.value)}
+            placeholder="WebSocket Server URL"
+            className="w-full text-gray-800 p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#128C7E]"
+            required
+          />
+        </div>
+
         <button
           onClick={handleRegister}
-          disabled={isRegistering || !username || !password}
+          disabled={isRegistering || !username || !password || !wsServer || !domain}
           className="w-full bg-[#128C7E] hover:bg-[#0e6b5e] text-white font-bold py-3 px-4 rounded-md disabled:opacity-50 transition duration-200"
         >
           {isRegistering ? (

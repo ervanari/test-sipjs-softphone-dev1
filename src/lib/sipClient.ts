@@ -206,7 +206,37 @@ export async function makeCall(target: string, withVideo = true): Promise<Sessio
             }
         });
 
-        const inviter = new Inviter(ua, UserAgent.makeURI(target)!, {
+        // Ensure target has the correct format
+        let formattedTarget = target;
+
+        // If target doesn't have a scheme (sip:), add it
+        if (!formattedTarget.startsWith('sip:') && !formattedTarget.startsWith('sips:')) {
+            formattedTarget = `sip:${formattedTarget}`;
+        }
+
+        // If target doesn't have a domain, add the default domain
+        if (!formattedTarget.includes('@')) {
+            // Extract domain from the registered URI
+            const registeredURI = ua.configuration.uri?.toString() || '';
+            const domain = registeredURI.split('@')[1]?.split(';')[0] || 'jsmwebrtc.my.id';
+            formattedTarget = `${formattedTarget}@${domain}`;
+        }
+
+        console.log(`Formatted target URI for call: ${formattedTarget}`);
+
+        // Create target URI
+        let targetURI;
+        try {
+            targetURI = UserAgent.makeURI(formattedTarget);
+            if (!targetURI) {
+                throw new Error("Invalid target URI");
+            }
+        } catch (error) {
+            console.error("Error creating target URI for call:", error);
+            throw new Error(`Invalid target URI: ${formattedTarget}. Please use format: username@domain or sip:username@domain`);
+        }
+
+        const inviter = new Inviter(ua, targetURI, {
             sessionDescriptionHandlerOptions: {
                 constraints: {
                     audio: true,
@@ -737,10 +767,73 @@ export function muteCall(mute: boolean) {
     return false;
 }
 
-export function sendMessage(target: string, message: string) {
-    const targetURI = UserAgent.makeURI(target)!;
-    const messager = new Messager(ua, targetURI, message);
-    messager.message();
+export function sendMessage(target: string, message: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+        try {
+            console.log(`Sending message to ${target}: ${message}`);
+
+            // Check if UA is initialized
+            if (!ua) {
+                const error = new Error("SIP User Agent not initialized. Please register first.");
+                console.error(error);
+                return reject(error);
+            }
+
+            // Ensure target has the correct format
+            let formattedTarget = target;
+
+            // If target doesn't have a scheme (sip:), add it
+            if (!formattedTarget.startsWith('sip:') && !formattedTarget.startsWith('sips:')) {
+                formattedTarget = `sip:${formattedTarget}`;
+            }
+
+            // If target doesn't have a domain, add the default domain
+            if (!formattedTarget.includes('@')) {
+                // Extract domain from the registered URI
+                const registeredURI = ua.configuration.uri?.toString() || '';
+                const domain = registeredURI.split('@')[1]?.split(';')[0] || 'jsmwebrtc.my.id';
+                formattedTarget = `${formattedTarget}@${domain}`;
+            }
+
+            console.log(`Formatted target URI: ${formattedTarget}`);
+
+            // Create target URI
+            let targetURI;
+            try {
+                targetURI = UserAgent.makeURI(formattedTarget);
+                if (!targetURI) {
+                    throw new Error("Invalid target URI");
+                }
+            } catch (error) {
+                console.error("Error creating target URI:", error);
+                return reject(new Error(`Invalid target URI: ${formattedTarget}. Please use format: username@domain or sip:username@domain`));
+            }
+
+            // Create messager and send message
+            const messager = new Messager(ua, targetURI, message);
+
+            // Send the message and handle the response
+            messager.message({
+                requestDelegate: {
+                    onAccept: () => {
+                        console.log(`✅ Message to ${formattedTarget} accepted by server`);
+                        resolve();
+                    },
+                    onReject: (response) => {
+                        const error = new Error(`Message rejected: ${response.message.reasonPhrase}`);
+                        console.error(error);
+                        reject(error);
+                    },
+                    onTrying: (response) => {
+                        console.log(`Message to ${formattedTarget} trying: ${response.message.reasonPhrase}`);
+                    }
+                }
+            });
+        } catch (error) {
+            console.error("Error sending message:", error);
+            reject(error instanceof Error ? error : new Error(String(error)));
+        }
+    });
 }
 
 export function transferCall(target: string) {
@@ -748,7 +841,37 @@ export function transferCall(target: string) {
 
     try {
         if (currentSession instanceof Inviter) {
-            currentSession.refer(UserAgent.makeURI(target)!);
+            // Ensure target has the correct format
+            let formattedTarget = target;
+
+            // If target doesn't have a scheme (sip:), add it
+            if (!formattedTarget.startsWith('sip:') && !formattedTarget.startsWith('sips:')) {
+                formattedTarget = `sip:${formattedTarget}`;
+            }
+
+            // If target doesn't have a domain, add the default domain
+            if (!formattedTarget.includes('@')) {
+                // Extract domain from the registered URI
+                const registeredURI = ua.configuration.uri?.toString() || '';
+                const domain = registeredURI.split('@')[1]?.split(';')[0] || 'jsmwebrtc.my.id';
+                formattedTarget = `${formattedTarget}@${domain}`;
+            }
+
+            console.log(`Formatted target URI for transfer: ${formattedTarget}`);
+
+            // Create target URI
+            let targetURI;
+            try {
+                targetURI = UserAgent.makeURI(formattedTarget);
+                if (!targetURI) {
+                    throw new Error("Invalid target URI");
+                }
+            } catch (error) {
+                console.error("Error creating target URI for transfer:", error);
+                throw new Error(`Invalid target URI: ${formattedTarget}. Please use format: username@domain or sip:username@domain`);
+            }
+
+            currentSession.refer(targetURI);
             return true;
         }
     } catch (error) {

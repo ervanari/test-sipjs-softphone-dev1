@@ -19,23 +19,45 @@ const Messaging = forwardRef<{addReceivedMessage: (from: string, body: string) =
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  const handleSendMessage = () => {
+  const [isSending, setIsSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
+
+  const handleSendMessage = async () => {
+    console.log("Sending message:", { target, domain, message });
     if (!target || !message) return;
 
-    sendMessage(`sip:${target}@${domain}`, message);
+    // Clear previous errors
+    setSendError(null);
+    setIsSending(true);
 
-    // Add to local messages list
-    setMessages(prev => [
-      ...prev,
-      {
-        from: "me",
-        body: message,
-        time: new Date()
-      }
-    ]);
+    try {
+      // Construct the full SIP URI if not already provided
+      const fullTarget = target.includes('@') ? target : `sip:${target}@${domain}`;
 
-    // Clear message input
-    setMessage("");
+      // Send the message
+      await sendMessage(fullTarget, message);
+
+      // Add to local messages list on success
+      setMessages(prev => [
+        ...prev,
+        {
+          from: "me",
+          body: message,
+          time: new Date()
+        }
+      ]);
+
+      // Clear message input
+      setMessage("");
+    } catch (error) {
+      console.error("Failed to send message:", error);
+      setSendError(error instanceof Error ? error.message : "Failed to send message");
+
+      // Show error for 5 seconds
+      setTimeout(() => setSendError(null), 5000);
+    } finally {
+      setIsSending(false);
+    }
   };
 
   // This function is called when a message is received
@@ -125,29 +147,53 @@ const Messaging = forwardRef<{addReceivedMessage: (from: string, body: string) =
         )}
       </div>
 
+      {/* Error Message */}
+      {sendError && (
+        <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-2 text-sm">
+          <p>{sendError}</p>
+        </div>
+      )}
+
       {/* Message Input */}
-      <div className="bg-[#f0f2f5] p-3 flex items-center space-x-2">
-        <input
-          type="text"
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}
-          placeholder="Type a message"
-          className="flex-1 py-2 px-4 rounded-full border border-gray-300 focus:outline-none focus:ring-2 focus:ring-[#128C7E]"
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              handleSendMessage();
-            }
-          }}
-        />
-        <button
-          onClick={handleSendMessage}
-          disabled={!target || !message}
-          className="bg-[#128C7E] hover:bg-[#0e6b5e] text-white rounded-full p-2 disabled:opacity-50 transition duration-200"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-          </svg>
-        </button>
+      <div className="bg-[#f0f2f5] p-3 flex flex-col">
+        <div className="flex items-center space-x-2">
+          <input
+            type="text"
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            placeholder="Type a message"
+            className="flex-1 py-2 px-4 rounded-full border border-gray-300 focus:outline-none focus:ring-2 focus:ring-[#128C7E]"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !isSending && target && message) {
+                handleSendMessage();
+              }
+            }}
+            disabled={isSending}
+          />
+          <button
+            onClick={handleSendMessage}
+            disabled={!target || !message || isSending}
+            className="bg-[#128C7E] hover:bg-[#0e6b5e] text-white rounded-full p-2 disabled:opacity-50 transition duration-200"
+          >
+            {isSending ? (
+              <svg className="animate-spin h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+            ) : (
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+              </svg>
+            )}
+          </button>
+        </div>
+
+        {/* Sending status */}
+        {isSending && (
+          <div className="text-xs text-gray-500 mt-1 ml-2">
+            Sending message...
+          </div>
+        )}
       </div>
     </div>
   );
