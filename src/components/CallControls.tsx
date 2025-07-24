@@ -378,7 +378,7 @@ const CallControls = forwardRef<CallControlsRef, CallControlsProps>(({ domain, i
               value={transferTarget}
               onChange={(e) => setTransferTarget(e.target.value)}
               placeholder="Enter transfer target"
-              className="flex-1 p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#128C7E]"
+              className="flex-1 p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#128C7E] text-black"
             />
             <button
               onClick={handleTransfer}

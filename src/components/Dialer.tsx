@@ -49,7 +49,7 @@ export default function Dialer({ domain, onCallInitiated }: DialerProps) {
             value={target}
             onChange={(e) => setTarget(e.target.value)}
             placeholder="Enter SIP address or phone number"
-            className="w-full p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#128C7E]"
+            className="w-full p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#128C7E] text-black"
             disabled={isCallInProgress}
           />
 

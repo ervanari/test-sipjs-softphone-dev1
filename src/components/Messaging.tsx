@@ -91,7 +91,7 @@ const Messaging = forwardRef<{addReceivedMessage: (from: string, body: string) =
           value={target}
           onChange={(e) => setTarget(e.target.value)}
           placeholder="Enter recipient SIP address"
-          className="w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#128C7E]"
+          className="w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#128C7E] text-black"
         />
       </div>
 
@@ -162,7 +162,7 @@ const Messaging = forwardRef<{addReceivedMessage: (from: string, body: string) =
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             placeholder="Type a message"
-            className="flex-1 py-2 px-4 rounded-full border border-gray-300 focus:outline-none focus:ring-2 focus:ring-[#128C7E]"
+            className="flex-1 py-2 px-4 rounded-full border border-gray-300 focus:outline-none focus:ring-2 focus:ring-[#128C7E] text-black"
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !isSending && target && message) {
                 handleSendMessage();

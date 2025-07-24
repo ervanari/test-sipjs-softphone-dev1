@@ -44,8 +44,8 @@ export default function SIPRegistration({ onRegistered, onIncomingCall, onMessag
         }
 
         // Auto-connect with saved credentials
-        setAutoConnecting(true);
-        registerWithSIP(data.username, data.password, data.wsServer, data.domain || domain);
+        // setAutoConnecting(true);
+        // registerWithSIP(data.username, data.password, data.wsServer, data.domain || domain);
       } catch (err) {
         console.error("Error parsing saved SIP data:", err);
       }
