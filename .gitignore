@@ -39,3 +39,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+/coverage
+/dist
+/.swc
+/.idea
+/.junie
+/docs

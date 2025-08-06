@@ -7,6 +7,7 @@ import {
     UserAgent,
     UserAgentOptions,
 } from "sip.js";
+import { recordCallStart, recordCallEnd } from "./callRecorder";
 
 let ua: UserAgent;
 let registerer: Registerer;
@@ -157,7 +158,15 @@ export function initSIP(config: SIPConfig): Promise<void> {
     });
 }
 
-export async function makeCall(target: string, withVideo = true): Promise<Session> {
+/**
+ * Makes an outgoing call to the specified target
+ *
+ * @param target The SIP address or phone number to call
+ * @param withVideo Whether to include video in the call
+ * @param userId Optional user ID for call recording. If provided, the call will be recorded in the call history
+ * @returns A Promise that resolves to the SIP.js Session object
+ */
+export async function makeCall(target: string, withVideo = true, userId?: string): Promise<Session> {
     try {
         console.log(`Requesting media permissions: audio=true, video=${withVideo}`);
         const stream = await navigator.mediaDevices.getUserMedia({
@@ -386,13 +395,26 @@ export async function makeCall(target: string, withVideo = true): Promise<Sessio
             }
         });
 
-        // Add state change listener to debug audio issues
+        // Add state change listener to debug audio issues and record call events
         inviter.stateChange.addListener((state) => {
             console.log(`Call state changed to: ${state}`);
 
             // When call is established, check audio tracks and connection
             if (state === 'Established') {
                 console.log('Call established, checking audio tracks and connection...');
+                
+                // Record call start if userId is provided
+                if (userId) {
+                    console.log(`Recording outgoing call start for user: ${userId}`);
+                    recordCallStart(userId, inviter, 'outgoing')
+                        .then(recordEndFn => {
+                            // Store the function to record call end
+                            (inviter as any)._recordCallEnd = recordEndFn;
+                        })
+                        .catch(error => {
+                            console.error('Error recording call start:', error);
+                        });
+                }
 
                 if (inviter.sessionDescriptionHandler) {
                     const sessionDescriptionHandler = inviter.sessionDescriptionHandler as any;
@@ -544,7 +566,15 @@ export async function makeCall(target: string, withVideo = true): Promise<Sessio
     }
 }
 
-export async function acceptCall(invitation: Invitation, withVideo = true): Promise<void> {
+/**
+ * Accepts an incoming call
+ *
+ * @param invitation The SIP.js Invitation object representing the incoming call
+ * @param withVideo Whether to include video in the call
+ * @param userId Optional user ID for call recording. If provided, the call will be recorded in the call history
+ * @returns A Promise that resolves when the call is accepted
+ */
+export async function acceptCall(invitation: Invitation, withVideo = true, userId?: string): Promise<void> {
     try {
         // Request media permissions before accepting the call
         console.log(`Requesting media permissions for incoming call: audio=true, video=${withVideo}`);
@@ -553,13 +583,26 @@ export async function acceptCall(invitation: Invitation, withVideo = true): Prom
             video: withVideo
         });
 
-        // Add state change listener to debug audio issues
+        // Add state change listener to debug audio issues and record call events
         invitation.stateChange.addListener((state) => {
             console.log(`Incoming call state changed to: ${state}`);
 
             // When call is established, check audio tracks and connection
             if (state === 'Established') {
                 console.log('Incoming call established, checking audio tracks and connection...');
+                
+                // Record call start if userId is provided
+                if (userId) {
+                    console.log(`Recording incoming call start for user: ${userId}`);
+                    recordCallStart(userId, invitation, 'incoming')
+                        .then(recordEndFn => {
+                            // Store the function to record call end
+                            (invitation as any)._recordCallEnd = recordEndFn;
+                        })
+                        .catch(error => {
+                            console.error('Error recording incoming call start:', error);
+                        });
+                }
 
                 if (invitation.sessionDescriptionHandler) {
                     const sessionDescriptionHandler = invitation.sessionDescriptionHandler as any;
@@ -710,6 +753,13 @@ export async function acceptCall(invitation: Invitation, withVideo = true): Prom
     }
 }
 
+/**
+ * Ends the current call
+ *
+ * If the call was being recorded (via recordCallStart), this function will also
+ * record the end of the call in the call history by calling the _recordCallEnd function
+ * that was stored on the session object.
+ */
 export function hangupCall() {
     if (currentSession) {
         // Store a reference to the current session
@@ -725,6 +775,18 @@ export function hangupCall() {
             // Check if the session is an Invitation (incoming call) and reject it
             else if (session instanceof Invitation) {
                 session.reject();
+            }
+        }
+
+        // Record call end if the function exists
+        if ((session as any)._recordCallEnd && typeof (session as any)._recordCallEnd === 'function') {
+            console.log('Recording call end');
+            try {
+                (session as any)._recordCallEnd().catch((error: any) => {
+                    console.error('Error recording call end:', error);
+                });
+            } catch (error) {
+                console.error('Error calling record call end function:', error);
             }
         }
 
@@ -1237,4 +1299,96 @@ export async function switchCamera() {
         console.error("Error accessing session for camera switch:", error);
     }
     return false;
+}
+
+/**
+ * Unregisters from the SIP server and cleans up resources
+ *
+ * @returns A Promise that resolves when unregistration is complete
+ */
+export function unregisterSIP(): Promise<void> {
+    return new Promise((resolve, reject) => {
+        try {
+            // Check if we have an active registration
+            if (!registerer) {
+                console.log("No active SIP registration to unregister");
+                resolve();
+                return;
+            }
+
+            console.log("Unregistering from SIP server...");
+            
+            // Set up a listener for the unregistered state
+            const stateChangeListener = (state: string) => {
+                if (state === "Unregistered") {
+                    console.log("✅ Successfully unregistered from SIP server");
+                    
+                    // Clean up the listener to prevent memory leaks
+                    registerer.stateChange.removeListener(stateChangeListener);
+                    
+                    // Clean up any active call
+                    if (currentSession) {
+                        try {
+                            hangupCall();
+                        } catch (error) {
+                            console.error("Error hanging up call during unregistration:", error);
+                        }
+                    }
+                    
+                    // Clean up the user agent if it exists
+                    if (ua) {
+                        try {
+                            ua.stop().then(() => {
+                                console.log("✅ SIP User Agent stopped");
+                                // Reset variables
+                                registerer = null as unknown as Registerer;
+                                ua = null as unknown as UserAgent;
+                                currentSession = null as unknown as Session;
+                                isOnHold = false;
+                                
+                                resolve();
+                            }).catch(error => {
+                                console.error("Error stopping SIP User Agent:", error);
+                                reject(error);
+                            });
+                        } catch (error) {
+                            console.error("Error stopping SIP User Agent:", error);
+                            reject(error);
+                        }
+                    } else {
+                        // If no user agent, just resolve
+                        resolve();
+                    }
+                }
+            };
+            
+            // Add the state change listener
+            registerer.stateChange.addListener(stateChangeListener);
+            
+            // Unregister from the SIP server
+            registerer.unregister()
+                .catch(error => {
+                    console.error("Error unregistering from SIP server:", error);
+                    
+                    // Clean up the listener
+                    registerer.stateChange.removeListener(stateChangeListener);
+                    
+                    // Still try to clean up resources
+                    if (ua) {
+                        ua.stop().catch(e => console.error("Error stopping UA after failed unregister:", e));
+                    }
+                    
+                    // Reset variables
+                    registerer = null as unknown as Registerer;
+                    ua = null as unknown as UserAgent;
+                    currentSession = null as unknown as Session;
+                    isOnHold = false;
+                    
+                    reject(error);
+                });
+        } catch (error) {
+            console.error("Error in unregisterSIP:", error);
+            reject(error);
+        }
+    });
 }

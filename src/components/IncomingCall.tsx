@@ -4,6 +4,7 @@ import { acceptCall, hangupCall } from "../lib/sipClient";
 
 interface IncomingCallProps {
   invitation: any;
+  userId?: string;
   onAccept: () => void;
   onReject?: () => void;
   onHide?: () => void;
@@ -25,7 +26,7 @@ const hasVideo = (invitation: any): boolean => {
   return false;
 };
 
-export default function IncomingCall({ invitation, onAccept, onReject, onHide }: IncomingCallProps) {
+export default function IncomingCall({ invitation, userId, onAccept, onReject, onHide }: IncomingCallProps) {
   console.log("IncomingCall component rendered", invitation);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [audioPlayError, setAudioPlayError] = useState(false);
@@ -84,7 +85,7 @@ export default function IncomingCall({ invitation, onAccept, onReject, onHide }:
 
     try {
       // Accept the call
-      await acceptCall(invitation, withVideo);
+      await acceptCall(invitation, withVideo, userId);
 
       // Notify parent component
       onAccept();

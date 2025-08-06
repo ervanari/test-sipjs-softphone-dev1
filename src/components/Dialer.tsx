@@ -4,10 +4,11 @@ import { makeCall } from "../lib/sipClient";
 
 interface DialerProps {
   domain: string;
+  userId?: string;
   onCallInitiated?: (session: any) => void;
 }
 
-export default function Dialer({ domain, onCallInitiated }: DialerProps) {
+export default function Dialer({ domain, userId, onCallInitiated }: DialerProps) {
   const [target, setTarget] = useState("");
   const [isVideo, setIsVideo] = useState(false);
   const [isCallInProgress, setIsCallInProgress] = useState(false);
@@ -21,7 +22,7 @@ export default function Dialer({ domain, onCallInitiated }: DialerProps) {
 
     try {
       // Pass the target as is, the makeCall function will handle URI formatting
-      const session = await makeCall(target, isVideo);
+      const session = await makeCall(target, isVideo, userId);
       if (onCallInitiated && session) {
         onCallInitiated(session);
       }

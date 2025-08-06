@@ -6,6 +6,9 @@ interface SIPRegistrationProps {
   onRegistered: (domain: string, username: string) => void;
   onIncomingCall: (invitation: any) => void;
   onMessageReceived?: (message: string, from: string) => void;
+  initialDomain?: string;
+  initialUsername?: string;
+  userId?: string;
 }
 
 // Interface for SIP data stored in localStorage
@@ -16,18 +19,30 @@ interface SIPData {
   domain: string;
 }
 
-export default function SIPRegistration({ onRegistered, onIncomingCall, onMessageReceived }: SIPRegistrationProps) {
-  const [username, setUsername] = useState("");
+export default function SIPRegistration({
+  onRegistered,
+  onIncomingCall,
+  onMessageReceived,
+  initialDomain,
+  initialUsername,
+  userId
+}: SIPRegistrationProps) {
+  const [username, setUsername] = useState(initialUsername || "");
   const [password, setPassword] = useState("");
-  const [domain, setDomain] = useState("jsmwebrtc.my.id"); // Default domain
+  const [domain, setDomain] = useState(initialDomain || "jsmwebrtc.my.id"); // Default domain
   const [wsServer, setWsServer] = useState("wss://jsmwebrtc.my.id:443/ws"); // Default WebSocket server URL
   const [isRegistering, setIsRegistering] = useState(false);
   const [isRegistered, setIsRegistered] = useState(false);
   const [error, setError] = useState("");
   const [autoConnecting, setAutoConnecting] = useState(false);
 
-  // Load SIP data from localStorage on component mount
+  // Load SIP data from localStorage on component mount if not provided via props
   useEffect(() => {
+    // If we have initialDomain and initialUsername from props, don't load from localStorage
+    if (initialDomain && initialUsername) {
+      return;
+    }
+    
     const savedSipData = localStorage.getItem('sipData');
 
     if (savedSipData) {
@@ -50,7 +65,7 @@ export default function SIPRegistration({ onRegistered, onIncomingCall, onMessag
         console.error("Error parsing saved SIP data:", err);
       }
     }
-  }, []);
+  }, [initialDomain, initialUsername]);
 
   // Function to register with SIP
   const registerWithSIP = async (usernameValue: string, passwordValue: string, wsServerValue: string, domainValue: string = domain) => {
@@ -92,6 +107,31 @@ export default function SIPRegistration({ onRegistered, onIncomingCall, onMessag
         ]
       });
 
+      // If we have a userId, save the SIP configuration to the database
+      if (userId) {
+        try {
+          await fetch('/api/user-config', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              userId,
+              sipServer: wsServerValue.replace('wss://', '').replace('/ws', ''),
+              sipUsername: usernameValue,
+              sipPassword: passwordValue,
+              sipDomain: domainValue,
+              sipPort: 443,
+              useWebSocket: true
+            }),
+          });
+          console.log('SIP configuration saved to database');
+        } catch (error) {
+          console.error('Error saving SIP configuration to database:', error);
+          // Don't fail the registration process if saving to database fails
+        }
+      }
+
       // Only set as registered if initSIP Promise resolves successfully
       setIsRegistered(true);
       onRegistered(domainValue, usernameValue);
@@ -130,7 +170,7 @@ export default function SIPRegistration({ onRegistered, onIncomingCall, onMessag
   return (
     <div className="bg-white rounded-lg shadow-md overflow-hidden">
       <div className="bg-[#128C7E] text-white p-4">
-        <h2 className="text-xl font-semibold">Sign in to your SIP account</h2>
+        <h2 className="text-xl font-semibold">User Configuration</h2>
       </div>
 
       {error && (

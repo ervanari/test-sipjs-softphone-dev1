@@ -1,36 +1,31 @@
-# WebRTC Softphone
+# SIP.js Softphone Development Guidelines
 
-A Next.js-based softphone application integrated with SIP.js for making voice and video calls over WebRTC.
+This document provides guidelines and instructions for developing and testing the SIP.js Softphone application.
 
-## Features
+## Table of Contents
+- [Build and Configuration Instructions](#build-and-configuration-instructions)
+- [Database and Authentication](#database-and-authentication)
+- [API Routes](#api-routes)
+- [Testing Information](#testing-information)
+- [Development Guidelines](#development-guidelines)
 
-- SIP account registration
-- Voice calls
-- Video calls
-- Text messaging
-- Call transfer
-- Incoming call notifications with ringtone
-- Responsive UI with Tailwind CSS
+## Build and Configuration Instructions
 
-## Prerequisites
-
-- Node.js (v16 or later)
+### Prerequisites
+- Node.js v16 or later
+- PostgreSQL database (local installation or cloud service like Supabase)
 - A SIP server with WebSocket support (e.g., Asterisk, FreeSWITCH, Kamailio)
 
-## Installation
+### Installation
 
-1. Clone the repository:
+1. Clone the repository and install dependencies:
    ```bash
    git clone <repository-url>
-   cd test-sipjs
-   ```
-
-2. Install dependencies:
-   ```bash
+   cd test-sipjs-softphone-dev1
    npm install
    ```
 
-3. Generate SSL certificates for local development (required for WebRTC):
+2. Generate SSL certificates (required for WebRTC):
    ```bash
    mkdir certificates
    cd certificates
@@ -46,65 +41,291 @@ A Next.js-based softphone application integrated with SIP.js for making voice an
    cd ..
    ```
 
-4. Start the development server:
-   ```bash
-   npm run dev
+   > **Important**: WebRTC requires HTTPS, even for local development. The application checks for these certificates and enables HTTPS automatically when they're present.
+
+### Development Server
+
+Start the development server:
+```bash
+npm run dev
+```
+
+The application will be available at `https://localhost:3000`. You may need to accept the self-signed certificate warning in your browser.
+
+### Production Build
+
+Build the application for production:
+```bash
+npm run build
+```
+
+Start the production server:
+```bash
+npm run start
+```
+
+## Database and Authentication
+
+The application uses Prisma ORM with PostgreSQL for database management and includes a complete authentication system.
+
+### Database Setup
+
+1. The project uses Prisma with PostgreSQL. Make sure you have PostgreSQL installed or use a cloud service like Supabase.
+
+2. Configure your database connection in the `.env` file:
+   ```
+   DATABASE_URL="postgresql://postgres:password@localhost:5432/database_name"
    ```
 
-5. Open your browser and navigate to `https://localhost:3000`
-   - You may need to accept the self-signed certificate warning
+3. Run Prisma migrations to set up the database schema:
+   ```bash
+   npx prisma migrate dev
+   ```
 
-## Usage
+4. Generate Prisma client:
+   ```bash
+   npx prisma generate
+   ```
 
-1. **Register your SIP account**:
-   - Enter your SIP URI (e.g., `user@domain.com`)
-   - Enter your username and password
-   - The default WebSocket server is set to `wss://jsmwebrtc.my.id:443/ws`, but you can change it to your SIP server's WebSocket address
+### Database Schema
 
-2. **Make a call**:
-   - Enter the target SIP address or phone number in the dialer
-   - Check the "Video Call" checkbox if you want to make a video call
-   - Click the "Call" button
+The database includes the following models:
 
-3. **Receive a call**:
-   - When someone calls you, you'll see an incoming call notification
-   - Click "Audio" to accept as an audio call
-   - Click "Video" to accept as a video call
-   - Click "Reject" to decline the call
+- **User**: Stores user authentication information
+- **RegisterConfig**: Stores SIP registration configuration for each user
+- **CallHistory**: Tracks call history with timestamps and call direction
 
-4. **During a call**:
-   - Use the "Hang Up" button to end the call
-   - Use the "Mute" button to toggle your microphone
-   - Use the transfer section to transfer the call to another SIP address
+You can view the complete schema in `prisma/schema.prisma`.
 
-5. **Send messages**:
-   - Enter the recipient's SIP address
-   - Type your message and click "Send"
+### Authentication System
 
-## Configuration
+The application includes a complete authentication system with:
 
-The application connects to a SIP server via WebSocket. You can configure the WebSocket server address in the registration form.
+1. **User Registration**: New users can create accounts with username and password
+2. **User Login**: Existing users can log in with their credentials
+3. **Password Hashing**: Passwords are securely hashed using bcrypt
+4. **Session Management**: User sessions are maintained in the application state
 
-## Development
+Authentication is required before accessing the SIP functionality.
 
-This project uses:
-- Next.js for the framework
-- Tailwind CSS for styling
-- SIP.js for SIP/WebRTC functionality
+## API Routes
 
-## Troubleshooting
+The application includes several API endpoints for managing users, call history, and SIP configuration.
 
-- **WebRTC not working**: Make sure you're using HTTPS (with the generated certificates) as WebRTC requires secure contexts
-- **Cannot register**: Check your SIP credentials and WebSocket server address
-- **No audio/video**: Check your browser permissions for microphone and camera access
+### User Management
 
-## Learn More
+- **POST /api/register**: Create a new user account
+  ```json
+  {
+    "username": "user123",
+    "password": "securepassword"
+  }
+  ```
 
-To learn more about Next.js, take a look at the following resources:
+- **POST /api/login**: Authenticate a user
+  ```json
+  {
+    "username": "user123",
+    "password": "securepassword"
+  }
+  ```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### SIP Configuration
 
-## License
+- **GET /api/user-config?userId={userId}**: Retrieve SIP configuration for a user
+- **POST /api/user-config**: Create or update SIP configuration
+  ```json
+  {
+    "userId": "user-id",
+    "sipServer": "wss://sip-server.example.com",
+    "sipUsername": "sip-username",
+    "sipPassword": "sip-password",
+    "sipDomain": "sip-domain.example.com",
+    "sipPort": 5060,
+    "useWebSocket": true
+  }
+  ```
 
-[MIT License](LICENSE)
+### Call History
+
+- **GET /api/call-history?userId={userId}**: Retrieve call history for a user
+- **POST /api/call-history**: Create a new call history record
+  ```json
+  {
+    "userId": "user-id",
+    "direction": "outgoing",
+    "phoneExt": "1234",
+    "startTime": "2023-08-01T12:00:00Z",
+    "endTime": "2023-08-01T12:05:30Z",
+    "notes": "Business call"
+  }
+  ```
+
+## Testing Information
+
+The project uses Jest and React Testing Library for testing. The tests are configured to work with Next.js and TypeScript.
+
+### Running Tests
+
+Run all tests:
+```bash
+npm test
+```
+
+Run tests in watch mode (useful during development):
+```bash
+npm run test:watch
+```
+
+### Test Structure
+
+Tests are organized in `__tests__` directories alongside the components they test. For example:
+- `src/components/__tests__/ComponentName.test.tsx`
+
+### Writing Tests
+
+Here's an example of a test for a component:
+
+```tsx
+import React from 'react';
+import { render, screen, fireEvent } from '@testing-library/react';
+import ComponentName from '../ComponentName';
+
+// Mock any dependencies
+jest.mock('../../lib/dependency', () => ({
+  someFunction: jest.fn(),
+}));
+
+describe('ComponentName', () => {
+  it('renders correctly', () => {
+    render(<ComponentName prop1="value" />);
+    expect(screen.getByText('Expected Text')).toBeInTheDocument();
+  });
+
+  it('handles user interaction', () => {
+    render(<ComponentName prop1="value" />);
+    fireEvent.click(screen.getByText('Click Me'));
+    expect(screen.getByText('Result')).toBeInTheDocument();
+  });
+});
+```
+
+### Testing WebRTC Components
+
+When testing components that use WebRTC APIs, you'll need to mock those APIs. The project includes mocks for:
+- MediaStream
+- AudioContext/webkitAudioContext
+- navigator.mediaDevices.getUserMedia
+
+These mocks are defined in `jest.setup.js`.
+
+### Example: Testing the Dialer Component
+
+Here's a simplified example of testing the Dialer component:
+
+```tsx
+import React from 'react';
+import { render, screen, fireEvent } from '@testing-library/react';
+import Dialer from '../Dialer';
+import { makeCall } from '../../lib/sipClient';
+
+// Mock the sipClient module
+jest.mock('../../lib/sipClient', () => ({
+  makeCall: jest.fn(),
+}));
+
+describe('Dialer Component', () => {
+  it('renders the dialer component correctly', () => {
+    render(<Dialer domain="example.com" />);
+    expect(screen.getByText('New Call')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Enter SIP address or phone number')).toBeInTheDocument();
+  });
+
+  it('updates the input field when typing', () => {
+    render(<Dialer domain="example.com" />);
+    const input = screen.getByPlaceholderText('Enter SIP address or phone number');
+    fireEvent.change(input, { target: { value: '1234' } });
+    expect(input).toHaveValue('1234');
+  });
+
+  it('calls makeCall with correct parameters when clicking the call button', async () => {
+    // Mock the makeCall function to return a mock session
+    const mockSession = { id: 'mock-session-id' };
+    (makeCall as jest.Mock).mockResolvedValue(mockSession);
+    
+    // Mock the onCallInitiated callback
+    const onCallInitiated = jest.fn();
+    
+    render(<Dialer domain="example.com" onCallInitiated={onCallInitiated} />);
+    
+    // Enter a target
+    const input = screen.getByPlaceholderText('Enter SIP address or phone number');
+    fireEvent.change(input, { target: { value: '1234' } });
+    
+    // Click the call button
+    fireEvent.click(screen.getByText('Audio Call'));
+    
+    // Check if makeCall was called with the correct parameters
+    expect(makeCall).toHaveBeenCalledWith('1234', false);
+  });
+});
+```
+
+## Development Guidelines
+
+### Project Structure
+
+The project follows a standard Next.js structure with TypeScript:
+
+- `src/app`: Next.js app router components
+- `src/components`: React components
+- `src/lib`: Utility functions and libraries
+- `public`: Static assets
+
+### Key Components
+
+- `SIPRegistration`: Handles SIP account registration
+- `Dialer`: Interface for making calls
+- `CallControls`: Controls for managing active calls
+- `VideoPanel`: Video display for calls
+- `Messaging`: Messaging functionality
+- `IncomingCall`: Handling incoming calls
+- `sipClient.ts`: Core SIP client functionality
+
+### SIP.js Integration
+
+The application uses SIP.js for WebRTC-based communication. Key features:
+
+1. **SIP Registration**: Connect to a SIP server via WebSocket
+2. **Call Handling**: Make and receive calls with audio and video
+3. **Messaging**: Send and receive SIP messages
+4. **Call Transfer**: Transfer active calls to another SIP address
+
+### WebRTC Considerations
+
+- Always test with HTTPS (required for WebRTC)
+- Test with different browsers (Chrome, Firefox, Safari)
+- Test with different devices (desktop, mobile)
+- Check microphone and camera permissions
+- Handle network changes and ICE connection failures
+
+### Debugging WebRTC
+
+The application includes built-in debugging tools:
+
+1. **Debug Audio**: Checks audio tracks and connections
+2. **Debug Info**: Shows detailed information about the WebRTC connection
+
+When developing WebRTC features:
+- Check browser console for detailed logs
+- Use the built-in debugging tools
+- Test with different network conditions
+- Verify SDP negotiation is working correctly
+
+### Code Style
+
+- Use TypeScript for type safety
+- Use functional components with hooks
+- Use Tailwind CSS for styling
+- Follow React best practices (avoid direct DOM manipulation, use state properly)
+- Handle errors gracefully with user-friendly messages

@@ -1,0 +1,52 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id             String          @id @default(cuid())
+  username       String          @unique
+  password       String
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  callHistory    CallHistory[]
+  registerConfig RegisterConfig?
+
+  @@map("users")
+}
+
+model CallHistory {
+  id        String    @id @default(cuid())
+  userId    String
+  startTime DateTime  @default(now())
+  endTime   DateTime?
+  direction String
+  phoneExt  String
+  notes     String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("call_history")
+}
+
+model RegisterConfig {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  sipServer    String
+  sipUsername  String
+  sipPassword  String
+  sipDomain    String
+  sipPort      Int      @default(5060)
+  useWebSocket Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("register_config")
+}
