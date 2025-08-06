@@ -11,7 +11,7 @@ interface UserConfig {
   sipUsername: string;
   sipPassword: string;
   sipDomain: string;
-  sipPort: number;
+  sipPort: number | '';
   useWebSocket: boolean;
 }
 
@@ -72,7 +72,7 @@ export default function UserConfigPage() {
     setConfig(prev => ({
       ...prev,
       [name]: type === 'checkbox' ? checked :
-              type === 'number' ? parseInt(value, 10) :
+              type === 'number' ? (value === '' ? '' : parseInt(value, 10)) :
               value
     }));
   };
@@ -88,9 +88,11 @@ export default function UserConfigPage() {
     setSuccessMessage(null);
     
     try {
+      // Ensure sipPort is a valid number before saving
       const configToSave = {
         ...config,
-        userId: user.id
+        userId: user.id,
+        sipPort: config.sipPort === '' ? 5060 : config.sipPort
       };
       
       const response = await fetch('/api/user-config', {

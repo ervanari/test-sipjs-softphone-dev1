@@ -201,6 +201,54 @@ export function initSIP(config: SIPConfig): Promise<void> {
  */
 export async function makeCall(target: string, withVideo = true, userId?: string): Promise<Session> {
     try {
+        // Check if UserAgent is initialized
+        if (!ua) {
+            console.log("SIP User Agent not initialized. Attempting to initialize with stored credentials...");
+            
+            // Check if we have stored SIP credentials
+            const savedSipData = localStorage.getItem('sipData');
+            
+            if (!savedSipData) {
+                throw new Error("SIP User Agent not initialized and no stored credentials found. Please register first before making a call.");
+            }
+            
+            try {
+                // Parse the stored credentials
+                const data = JSON.parse(savedSipData);
+                
+                if (!data.username || !data.password || !data.wsServer || !data.domain) {
+                    throw new Error("Incomplete SIP credentials found. Please register with complete information before making a call.");
+                }
+                
+                console.log("Initializing SIP User Agent with stored credentials...");
+                
+                // Construct SIP URI from username and domain
+                const sipUri = `sip:${data.username}@${data.domain}`;
+                
+                // Initialize SIP client with stored credentials
+                await initSIP({
+                    uri: sipUri,
+                    password: data.password,
+                    wsServer: data.wsServer,
+                    iceServers: [
+                        { urls: 'stun:stun.l.google.com:19302' },
+                        { urls: 'stun:stun1.l.google.com:19302' },
+                        { urls: 'stun:stun2.l.google.com:19302' }
+                    ]
+                });
+                
+                console.log("SIP User Agent initialized successfully with stored credentials.");
+            } catch (error) {
+                console.error("Failed to initialize SIP User Agent with stored credentials:", error);
+                throw new Error("Failed to initialize SIP User Agent with stored credentials. Please register again before making a call.");
+            }
+            
+            // Check if UserAgent is now initialized
+            if (!ua) {
+                throw new Error("SIP User Agent initialization failed. Please register manually before making a call.");
+            }
+        }
+        
         console.log(`Requesting media permissions: audio=true, video=${withVideo}`);
         const stream = await navigator.mediaDevices.getUserMedia({
             audio: true,
@@ -258,9 +306,12 @@ export async function makeCall(target: string, withVideo = true, userId?: string
 
         // If target doesn't have a domain, add the default domain
         if (!formattedTarget.includes('@')) {
-            // Extract domain from the registered URI
-            const registeredURI = ua.configuration.uri?.toString() || '';
-            const domain = registeredURI.split('@')[1]?.split(';')[0] || 'jsmwebrtc.my.id';
+            // Extract domain from the registered URI if available, otherwise use default
+            let domain = 'jsmwebrtc.my.id';
+            if (ua && ua.configuration && ua.configuration.uri) {
+                const registeredURI = ua.configuration.uri.toString() || '';
+                domain = registeredURI.split('@')[1]?.split(';')[0] || domain;
+            }
             formattedTarget = `${formattedTarget}@${domain}`;
         }
 
@@ -884,9 +935,12 @@ export function sendMessage(target: string, message: string): Promise<void> {
 
             // If target doesn't have a domain, add the default domain
             if (!formattedTarget.includes('@')) {
-                // Extract domain from the registered URI
-                const registeredURI = ua.configuration.uri?.toString() || '';
-                const domain = registeredURI.split('@')[1]?.split(';')[0] || 'jsmwebrtc.my.id';
+                // Extract domain from the registered URI if available, otherwise use default
+                let domain = 'jsmwebrtc.my.id';
+                if (ua && ua.configuration && ua.configuration.uri) {
+                    const registeredURI = ua.configuration.uri.toString() || '';
+                    domain = registeredURI.split('@')[1]?.split(';')[0] || domain;
+                }
                 formattedTarget = `${formattedTarget}@${domain}`;
             }
 
@@ -933,6 +987,12 @@ export function sendMessage(target: string, message: string): Promise<void> {
 
 export function transferCall(target: string) {
     if (!currentSession) return false;
+    
+    // Check if UserAgent is initialized
+    if (!ua) {
+        console.error("SIP User Agent not initialized. Please register first before transferring a call.");
+        return false;
+    }
 
     try {
         if (currentSession instanceof Inviter) {
@@ -946,9 +1006,12 @@ export function transferCall(target: string) {
 
             // If target doesn't have a domain, add the default domain
             if (!formattedTarget.includes('@')) {
-                // Extract domain from the registered URI
-                const registeredURI = ua.configuration.uri?.toString() || '';
-                const domain = registeredURI.split('@')[1]?.split(';')[0] || 'jsmwebrtc.my.id';
+                // Extract domain from the registered URI if available, otherwise use default
+                let domain = 'jsmwebrtc.my.id';
+                if (ua && ua.configuration && ua.configuration.uri) {
+                    const registeredURI = ua.configuration.uri.toString() || '';
+                    domain = registeredURI.split('@')[1]?.split(';')[0] || domain;
+                }
                 formattedTarget = `${formattedTarget}@${domain}`;
             }
 
