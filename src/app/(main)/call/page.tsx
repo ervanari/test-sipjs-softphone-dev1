@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useAuth } from '@/lib/hooks/useAuth';
 import Dialer from '@/components/Dialer';
-import CallControls from '@/components/CallControls';
+import CallControls, { CallControlsRef } from '@/components/CallControls';
 import VideoPanel from '@/components/VideoPanel';
 import Link from 'next/link';
 
@@ -13,16 +13,16 @@ export default function CallPage() {
   // Call state
   const [inCall, setInCall] = useState(false);
   const [currentSession, setCurrentSession] = useState(null);
-  const [callStatus, setCallStatus] = useState();
+  const [callStatus, setCallStatus] = useState<"connected" | "connecting" | "reconnecting" | undefined>();
 
   // Media streams
-  const [localStream, setLocalStream] = useState(null);
-  const [remoteStream, setRemoteStream] = useState(null);
+  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [isVideoEnabled, setIsVideoEnabled] = useState(true);
   const [isSwitchingCamera, setIsSwitchingCamera] = useState(false);
 
   // Refs for component methods
-  const callControlsRef = useRef(null);
+  const callControlsRef = useRef<CallControlsRef>(null);
 
   // Handle video toggle
   const handleVideoToggle = () => {
@@ -44,7 +44,7 @@ export default function CallPage() {
     }
   };
 
-  const handleCallInitiated = (session) => {
+  const handleCallInitiated = (session: any) => {
     setCurrentSession(session);
     setInCall(true);
     setCallStatus('connecting');
@@ -52,13 +52,13 @@ export default function CallPage() {
 
     // Listen for call establishment to get media streams
     if (session && session.stateChange) {
-      session.stateChange.addListener((state) => {
+      session.stateChange.addListener((state: string) => {
         if (state === "Established" && session.sessionDescriptionHandler && session.sessionDescriptionHandler.peerConnection) {
           const pc = session.sessionDescriptionHandler.peerConnection;
 
           // Get local stream
           const localMediaStream = new MediaStream();
-          pc.getSenders().forEach((s) => {
+          pc.getSenders().forEach((s: { track: MediaStreamTrack; }) => {
             if (s.track) {
               console.log(`Adding local track from outgoing call: ${s.track.kind}, enabled: ${s.track.enabled}, readyState: ${s.track.readyState}`);
               // Ensure track is enabled
@@ -73,7 +73,7 @@ export default function CallPage() {
           const remoteMediaStream = new MediaStream();
 
           // Add existing tracks
-          pc.getReceivers().forEach((r) => {
+          pc.getReceivers().forEach((r: { track: MediaStreamTrack; }) => {
             if (r.track) {
               console.log(`Adding existing track: ${r.track.kind}, enabled: ${r.track.enabled}, readyState: ${r.track.readyState}`);
               // Ensure track is enabled
@@ -85,11 +85,11 @@ export default function CallPage() {
           console.log(`Initial remote stream created with ${remoteMediaStream.getTracks().length} tracks`);
 
           // Listen for track events to handle tracks that arrive later
-          pc.addEventListener('track', (event) => {
+          pc.addEventListener('track', (event: { track: MediaStreamTrack; streams: string | any[]; }) => {
             console.log('Track event received:', event.track.kind, 'enabled:', event.track.enabled, 'readyState:', event.track.readyState);
 
             if (event.streams && event.streams.length > 0) {
-              event.streams[0].getTracks().forEach((track) => {
+              event.streams[0].getTracks().forEach((track: MediaStreamTrack) => {
                 console.log(`Adding new track: ${track.kind}, enabled: ${track.enabled}, readyState: ${track.readyState}`);
                 // Ensure track is enabled
                 track.enabled = true;

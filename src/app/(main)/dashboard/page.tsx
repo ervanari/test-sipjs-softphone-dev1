@@ -33,14 +33,14 @@ export default function DashboardPage() {
         
         // Calculate stats
         const totalCalls = calls.length;
-        const incomingCalls = calls.filter(call => call.direction === 'incoming').length;
-        const outgoingCalls = calls.filter(call => call.direction === 'outgoing').length;
+        const incomingCalls = calls.filter((call: { direction: string; }) => call.direction === 'incoming').length;
+        const outgoingCalls = calls.filter((call: { direction: string; }) => call.direction === 'outgoing').length;
         
         // Calculate average duration (for completed calls only)
-        const completedCalls = calls.filter(call => call.endTime);
+        const completedCalls = calls.filter((call: { endTime: any; }) => call.endTime);
         let totalDuration = 0;
         
-        completedCalls.forEach(call => {
+        completedCalls.forEach((call: { startTime: string | number | Date; endTime: string | number | Date; }) => {
           const start = new Date(call.startTime).getTime();
           const end = new Date(call.endTime).getTime();
           totalDuration += (end - start);
@@ -67,7 +67,7 @@ export default function DashboardPage() {
   }, [user]);
 
   // Format seconds to mm:ss
-  const formatDuration = (seconds) => {
+  const formatDuration = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins}m ${secs}s`;

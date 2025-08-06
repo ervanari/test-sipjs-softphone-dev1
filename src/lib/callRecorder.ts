@@ -53,13 +53,13 @@ export async function recordCallStart(
   direction: 'incoming' | 'outgoing'
 ): Promise<() => Promise<void>> {
   try {
-    // Extract the phone number or SIP extension from the session
     let phoneExt = '';
     
     if (direction === 'outgoing') {
-      // For outgoing calls, get the target URI from the request URI
-      const requestUri = (session as Inviter).request.requestUri;
-      phoneExt = extractPhoneFromUri(requestUri?.toString() || '');
+      const inviter = session as Inviter;
+      const request = inviter.request;
+      const targetUri = (request as any).ruri || (request as any).to?.uri;
+      phoneExt = extractPhoneFromUri(targetUri?.toString() || '');
     } else {
       // For incoming calls, get the caller URI from the from URI
       const fromUri = (session as Invitation).request.from.uri;

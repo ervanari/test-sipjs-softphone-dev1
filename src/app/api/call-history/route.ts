@@ -101,15 +101,23 @@ export async function POST(request: NextRequest) {
             { status: 400 }
           );
         } else {
+          let errorMessage = 'Failed to parse request body.';
+          if (parseError instanceof Error) {
+            errorMessage = `Failed to parse request body: ${parseError.message}`;
+          }
           return NextResponse.json(
-            { error: `Invalid JSON in request body: ${parseError.message}` },
+            { error: errorMessage },
             { status: 400 }
           );
         }
       } catch (textError) {
         console.error('Error reading raw request body:', textError);
+        let errorMessage = 'Failed to parse request body.';
+        if (parseError instanceof Error) {
+          errorMessage = `Failed to parse request body: ${parseError.message}`;
+        }
         return NextResponse.json(
-          { error: `Failed to parse request body: ${parseError.message}` },
+          { error: errorMessage },
           { status: 400 }
         );
       }

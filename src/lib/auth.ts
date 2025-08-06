@@ -33,11 +33,9 @@ export const sessionOptions = {
 
 // Get the session from the request
 export async function getSession(req?: NextRequest) {
-  const cookieStore = cookies();
-  
-  // Use the request cookies if provided, otherwise use the server cookies
+  const cookieStore = await cookies();
   const session = await getIronSession<SessionData>(
-    req ? req.cookies : cookieStore,
+    cookieStore,
     sessionOptions
   );
 

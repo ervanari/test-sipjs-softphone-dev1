@@ -1126,7 +1126,7 @@ export async function acceptCall(invitation: Invitation, withVideo = true, userI
                     "sipClient");
                 
                 // Try to add tracks at various states to ensure they're added
-                if (newState === 'Establishing' || newState === 'Established' || newState === 'Accepted') {
+                if (newState === 'Establishing' || newState === 'Established') {
                     logger.info(`Call in ${newState} state, attempting to add tracks...`,
                         { sessionId: invitation.id },
                         "sipClient");
@@ -1275,8 +1275,8 @@ export function hangupCall() {
         logger.info(`Hanging up call`, { sessionId, state: session.state }, "sipClient");
 
         // Handle different session states
-        if (session.state === "Established" || session.state === "Accepted" || session.state === "Confirmed") {
-            // For established or accepted calls, use bye()
+        if (session.state === "Established") {
+            // For established calls, use bye()
             logger.info(`Call in ${session.state} state, using bye() to terminate`, { sessionId }, "sipClient");
             session.bye();
         } else if (session.state === "Initial") {
