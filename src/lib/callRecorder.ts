@@ -78,19 +78,51 @@ export async function recordCallStart(
 
     // Save the call record to the database
     try {
+      // Validate the call record before sending
+      if (!userId || !direction || !phoneExt) {
+        console.error('Missing required fields for call record', { userId, direction, phoneExt });
+        throw new Error('Missing required fields for call record');
+      }
+
+      // Create a sanitized version of the call record to prevent circular references
+      const sanitizedRecord = {
+        userId,
+        direction,
+        phoneExt,
+        startTime: callRecord.startTime,
+        notes: callRecord.notes
+      };
+
+      // Log the data being sent for debugging
+      console.log('Sending new call record:', JSON.stringify(sanitizedRecord));
+
       const response = await fetch('/api/call-history', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(callRecord),
+        body: JSON.stringify(sanitizedRecord),
       });
 
+      // Check for HTTP errors
       if (!response.ok) {
-        throw new Error(`Failed to save call record: ${response.statusText}`);
+        const errorText = await response.text();
+        throw new Error(`Failed to save call record: ${response.status} ${response.statusText} - ${errorText}`);
       }
 
-      const data = await response.json();
+      // Parse the response
+      let data;
+      try {
+        data = await response.json();
+      } catch (parseError) {
+        console.error('Error parsing response JSON:', parseError);
+        throw new Error('Failed to parse response from server');
+      }
+      
+      if (!data || !data.id) {
+        console.error('Invalid response data:', data);
+        throw new Error('Invalid response data from server');
+      }
       
       // Store the record ID for updating later
       callRecord.recordId = data.id;
@@ -105,6 +137,12 @@ export async function recordCallStart(
       console.log(`Call record created with ID: ${data.id}`);
     } catch (error) {
       console.error('Error saving call record:', error);
+      // Log more details about the error
+      if (error instanceof Error) {
+        console.error('Error details:', error.message);
+        console.error('Error stack:', error.stack);
+      }
+      
       // Still store the call record in memory to try updating it when the call ends
       const sessionId = session.id;
       activeCalls.set(sessionId, callRecord);
@@ -143,16 +181,38 @@ export async function recordCallEnd(session: Session): Promise<void> {
 
     // Update the call record in the database
     try {
+      // Validate the call record before sending
+      if (!callRecord.recordId) {
+        console.warn('No recordId found for call, cannot update record');
+        return;
+      }
+
+      // Create a sanitized version of the call record to prevent circular references
+      const sanitizedRecord = {
+        userId: callRecord.userId,
+        direction: callRecord.direction,
+        phoneExt: callRecord.phoneExt,
+        startTime: callRecord.startTime,
+        endTime: callRecord.endTime,
+        notes: callRecord.notes,
+        recordId: callRecord.recordId
+      };
+
+      // Log the data being sent for debugging
+      console.log('Sending call record update:', JSON.stringify(sanitizedRecord));
+
       const response = await fetch('/api/call-history', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(callRecord),
+        body: JSON.stringify(sanitizedRecord),
       });
 
+      // Check for HTTP errors
       if (!response.ok) {
-        throw new Error(`Failed to update call record: ${response.statusText}`);
+        const errorText = await response.text();
+        throw new Error(`Failed to update call record: ${response.status} ${response.statusText} - ${errorText}`);
       }
 
       console.log(`Call record updated with end time: ${callRecord.endTime.toISOString()}`);
@@ -161,6 +221,11 @@ export async function recordCallEnd(session: Session): Promise<void> {
       removeStoredCallId(sessionId);
     } catch (error) {
       console.error('Error updating call record:', error);
+      // Log more details about the error
+      if (error instanceof Error) {
+        console.error('Error details:', error.message);
+        console.error('Error stack:', error.stack);
+      }
       // Implement retry logic here if needed
     }
 

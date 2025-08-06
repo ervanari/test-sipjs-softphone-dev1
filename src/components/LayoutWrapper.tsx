@@ -5,6 +5,7 @@ import { useAuth } from '@/lib/hooks/useAuth';
 import { useRouter } from 'next/navigation';
 import Sidebar from './Sidebar';
 import Navbar from './Navbar';
+import SIPProvider from './SIPProvider';
 
 interface LayoutWrapperProps {
   children: React.ReactNode;
@@ -54,23 +55,25 @@ export default function LayoutWrapper({ children }: LayoutWrapperProps) {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Sidebar */}
-      <Sidebar isOpen={sidebarOpen} toggleSidebar={toggleSidebar} />
+    <SIPProvider>
+      <div className="min-h-screen bg-gray-50">
+        {/* Sidebar */}
+        <Sidebar isOpen={sidebarOpen} toggleSidebar={toggleSidebar} />
 
-      {/* Main Content */}
-      <div className={`
-        transition-all duration-300 ease-in-out
-        ${sidebarOpen ? 'md:ml-64' : 'md:ml-16'}
-      `}>
-        {/* Navbar */}
-        <Navbar isOpen={sidebarOpen} toggleSidebar={toggleSidebar} />
+        {/* Main Content */}
+        <div className={`
+          transition-all duration-300 ease-in-out
+          ${sidebarOpen ? 'md:ml-64' : 'md:ml-16'}
+        `}>
+          {/* Navbar */}
+          <Navbar isOpen={sidebarOpen} toggleSidebar={toggleSidebar} />
 
-        {/* Main Content Area */}
-        <main className="pt-20 px-4 pb-8">
-          {children}
-        </main>
+          {/* Main Content Area */}
+          <main className="pt-20 px-4 pb-8">
+            {children}
+          </main>
+        </div>
       </div>
-    </div>
+    </SIPProvider>
   );
 }

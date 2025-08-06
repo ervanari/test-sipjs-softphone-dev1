@@ -84,10 +84,13 @@ export default function IncomingCall({ invitation, userId, onAccept, onReject, o
     }
 
     try {
-      // Accept the call
+      // Accept the call and wait for it to be confirmed
+      console.log("Accepting call and waiting for confirmation...");
       await acceptCall(invitation, withVideo, userId);
-
-      // Notify parent component
+      
+      console.log("Call confirmed successfully, transitioning to In Call state");
+      
+      // Only notify parent component after call is confirmed
       onAccept();
     } catch (error) {
       console.error("Failed to accept call:", error);

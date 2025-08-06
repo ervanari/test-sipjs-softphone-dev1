@@ -62,7 +62,59 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    // Check if request has a body
+    const contentType = request.headers.get('content-type');
+    if (!contentType || !contentType.includes('application/json')) {
+      return NextResponse.json(
+        { error: 'Content-Type must be application/json' },
+        { status: 400 }
+      );
+    }
+
+    // Clone the request to get the raw body for logging if needed
+    const clonedRequest = request.clone();
+    
+    // Try to parse the JSON body with better error handling
+    let body;
+    try {
+      body = await request.json();
+      
+      // Check if body is empty
+      if (!body || Object.keys(body).length === 0) {
+        console.error('Error: Request body is empty');
+        return NextResponse.json(
+          { error: 'Request body is empty' },
+          { status: 400 }
+        );
+      }
+    } catch (parseError) {
+      // Log the error and try to get the raw body for debugging
+      console.error('Error parsing JSON:', parseError);
+      
+      try {
+        const rawBody = await clonedRequest.text();
+        console.error('Raw request body:', rawBody);
+        
+        if (!rawBody || rawBody.trim() === '') {
+          return NextResponse.json(
+            { error: 'Request body is empty' },
+            { status: 400 }
+          );
+        } else {
+          return NextResponse.json(
+            { error: `Invalid JSON in request body: ${parseError.message}` },
+            { status: 400 }
+          );
+        }
+      } catch (textError) {
+        console.error('Error reading raw request body:', textError);
+        return NextResponse.json(
+          { error: `Failed to parse request body: ${parseError.message}` },
+          { status: 400 }
+        );
+      }
+    }
+    
     const { userId, direction, phoneExt, startTime, endTime, notes, recordId } = body;
 
     // Validate required fields

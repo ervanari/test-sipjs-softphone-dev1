@@ -9,18 +9,18 @@ import Link from 'next/link';
 
 export default function CallPage() {
   const { user } = useAuth();
-  
+
   // Call state
   const [inCall, setInCall] = useState(false);
   const [currentSession, setCurrentSession] = useState(null);
   const [callStatus, setCallStatus] = useState();
-  
+
   // Media streams
   const [localStream, setLocalStream] = useState(null);
   const [remoteStream, setRemoteStream] = useState(null);
   const [isVideoEnabled, setIsVideoEnabled] = useState(true);
   const [isSwitchingCamera, setIsSwitchingCamera] = useState(false);
-  
+
   // Refs for component methods
   const callControlsRef = useRef(null);
 
@@ -49,13 +49,13 @@ export default function CallPage() {
     setInCall(true);
     setCallStatus('connecting');
     console.log('Call initiated with session:', session);
-    
+
     // Listen for call establishment to get media streams
     if (session && session.stateChange) {
       session.stateChange.addListener((state) => {
         if (state === "Established" && session.sessionDescriptionHandler && session.sessionDescriptionHandler.peerConnection) {
           const pc = session.sessionDescriptionHandler.peerConnection;
-          
+
           // Get local stream
           const localMediaStream = new MediaStream();
           pc.getSenders().forEach((s) => {
@@ -68,10 +68,10 @@ export default function CallPage() {
           });
           console.log(`Local stream created with ${localMediaStream.getTracks().length} tracks`);
           setLocalStream(localMediaStream);
-          
+
           // Get remote stream
           const remoteMediaStream = new MediaStream();
-          
+
           // Add existing tracks
           pc.getReceivers().forEach((r) => {
             if (r.track) {
@@ -81,13 +81,13 @@ export default function CallPage() {
               remoteMediaStream.addTrack(r.track);
             }
           });
-          
+
           console.log(`Initial remote stream created with ${remoteMediaStream.getTracks().length} tracks`);
-          
+
           // Listen for track events to handle tracks that arrive later
           pc.addEventListener('track', (event) => {
             console.log('Track event received:', event.track.kind, 'enabled:', event.track.enabled, 'readyState:', event.track.readyState);
-            
+
             if (event.streams && event.streams.length > 0) {
               event.streams[0].getTracks().forEach((track) => {
                 console.log(`Adding new track: ${track.kind}, enabled: ${track.enabled}, readyState: ${track.readyState}`);
@@ -101,24 +101,24 @@ export default function CallPage() {
               event.track.enabled = true;
               remoteMediaStream.addTrack(event.track);
             }
-            
+
             // Create a new MediaStream to trigger a re-render
             const updatedStream = new MediaStream(remoteMediaStream.getTracks());
             console.log(`Updated remote stream with ${updatedStream.getTracks().length} tracks`);
             setRemoteStream(updatedStream);
             setCallStatus('connected');
           });
-          
+
           // Set initial remote stream if it has tracks
           if (remoteMediaStream.getTracks().length > 0) {
             setRemoteStream(remoteMediaStream);
           }
-          
+
           // Set call as connected after a short delay if we already have remote tracks
           if (remoteMediaStream.getTracks().length > 0) {
             setTimeout(() => {
               setCallStatus('connected');
-              
+
               // Force a refresh of the streams after a delay to ensure they're properly displayed
               setTimeout(() => {
                 if (localMediaStream.getTracks().length > 0) {
@@ -185,7 +185,7 @@ export default function CallPage() {
               callStatus={callStatus}
             />
           </div>
-          
+
           {/* Call Controls */}
           <div className="bg-white p-4 rounded-lg shadow-md">
             <CallControls
@@ -205,7 +205,7 @@ export default function CallPage() {
               onCallInitiated={handleCallInitiated}
             />
           </div>
-          
+
           <div className="bg-white rounded-lg shadow-md p-6">
             <h2 className="text-lg font-semibold text-gray-800 mb-4">Call Instructions</h2>
             <div className="space-y-3 text-gray-600">
@@ -214,7 +214,7 @@ export default function CallPage() {
               <p>3. Click the call button to initiate the call.</p>
               <p>4. Use the keypad to enter DTMF tones during the call if needed.</p>
             </div>
-            
+
             <div className="mt-6 pt-6 border-t border-gray-200">
               <h3 className="font-medium text-gray-800 mb-2">Need to configure your SIP account?</h3>
               <Link

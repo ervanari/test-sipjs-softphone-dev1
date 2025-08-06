@@ -69,6 +69,8 @@ const CallControls = forwardRef<CallControlsRef, CallControlsProps>(({ domain, i
   // Start call duration timer when call is established
   useEffect(() => {
     if (inCall) {
+      console.log("CallControls: inCall state is true, starting call monitoring");
+      
       timerRef.current = setInterval(() => {
         setCallDuration(prev => prev + 1);
       }, 1000);
@@ -76,16 +78,26 @@ const CallControls = forwardRef<CallControlsRef, CallControlsProps>(({ domain, i
       // Update call status
       const checkStatus = setInterval(() => {
         const state = getCallState();
+        console.log(`CallControls: Current call state: ${state}`);
+        
         if (state === "Established") {
+          console.log("CallControls: Call is fully established, setting status to 'In Call'");
           setCallStatus("In Call");
         } else if (state === "Terminated") {
+          console.log("CallControls: Call has been terminated, setting status to 'Ended'");
           setCallStatus("Ended");
         } else {
+          console.log(`CallControls: Call is in ${state} state, setting status to 'Connecting'`);
           setCallStatus("Connecting");
         }
       }, 500);
 
+      // Initial status check
+      const initialState = getCallState();
+      console.log(`CallControls: Initial call state: ${initialState}`);
+
       return () => {
+        console.log("CallControls: Cleaning up call monitoring");
         if (timerRef.current) clearInterval(timerRef.current);
         clearInterval(checkStatus);
         setCallDuration(0);

@@ -8,11 +8,13 @@ import {
     UserAgentOptions,
 } from "sip.js";
 import { recordCallStart, recordCallEnd } from "./callRecorder";
+import logger, { setSessionId } from "./logger";
 
-let ua: UserAgent;
-let registerer: Registerer;
-let currentSession: Session;
-let isOnHold: boolean = false;
+// Export these variables so they can be accessed by other components
+export let ua: UserAgent;
+export let registerer: Registerer;
+export let currentSession: Session;
+export let isOnHold: boolean = false;
 
 interface SIPConfig {
     uri: string;
@@ -28,6 +30,8 @@ interface SIPConfig {
 }
 
 export function initSIP(config: SIPConfig): Promise<void> {
+    logger.info("Initializing SIP client", { uri: config.uri, wsServer: config.wsServer }, "sipClient");
+    
     return new Promise((resolve, reject) => {
         const {
             uri,
@@ -116,6 +120,14 @@ export function initSIP(config: SIPConfig): Promise<void> {
             ua.delegate = {
                 onInvite: (invitation) => {
                     currentSession = invitation;
+                    // Set session ID for logging
+                    setSessionId(invitation.id);
+                    logger.info("Incoming call received", {
+                        sessionId: invitation.id,
+                        from: invitation.remoteIdentity?.uri?.toString() || "Unknown",
+                        hasVideo: invitation.request?.body?.includes('m=video') || false
+                    }, "sipClient");
+                    
                     if (onInvite) {
                         onInvite(invitation);
                     }
@@ -124,6 +136,7 @@ export function initSIP(config: SIPConfig): Promise<void> {
                     if (onMessage) {
                         const from = message.request.from.uri.toString();
                         const body = message.request.body;
+                        logger.info("SIP message received", { from, bodyLength: body.length }, "sipClient");
                         onMessage(body, from);
                     }
                 }
@@ -136,15 +149,17 @@ export function initSIP(config: SIPConfig): Promise<void> {
                     console.log(`SIP registration state changed to: ${state}`);
                     switch (state) {
                         case "Registered":
-                            console.log("✅ SIP connected and registered");
+                            logger.info("SIP connected and registered successfully", { uri }, "sipClient");
                             safeResolve();
                             break;
                         case "Unregistered":
-                            console.log("❌ SIP unregistered");
+                            logger.warn("SIP unregistered", { uri }, "sipClient");
                             if (!isPromiseSettled) {
                                 if (retryCount < maxRetries) {
                                     retryCount++;
-                                    console.log(`Retrying SIP registration (${retryCount}/${maxRetries})...`);
+                                    logger.info(`Retrying SIP registration (${retryCount}/${maxRetries})...`,
+                                        { uri, retryCount, maxRetries, retryDelay },
+                                        "sipClient");
                                     
                                     // Call the retry callback if provided
                                     if (onRegistrationRetry) {
@@ -154,19 +169,23 @@ export function initSIP(config: SIPConfig): Promise<void> {
                                     // Attempt to register again after the specified delay
                                     setTimeout(() => {
                                         if (!isPromiseSettled && registerer) {
-                                            console.log(`Retry attempt ${retryCount}/${maxRetries}`);
+                                            logger.info(`Retry attempt ${retryCount}/${maxRetries}`,
+                                                { uri, retryCount, maxRetries },
+                                                "sipClient");
                                             registerer.register();
                                         }
                                     }, retryDelay);
                                 } else {
                                     const error = new Error("Registration failed or expired.");
-                                    console.error("❌ SIP registration failed or expired after " + maxRetries + " retries:", error);
+                                    logger.error("SIP registration failed or expired after maximum retries",
+                                        { uri, maxRetries, error: error.message, stack: error.stack },
+                                        "sipClient");
                                     safeReject(error);
                                 }
                             }
                             break;
                         case "Terminated":
-                            console.log("❌ SIP registration terminated");
+                            logger.warn("SIP registration terminated", { uri }, "sipClient");
                             break;
                     }
                 });
@@ -203,13 +222,16 @@ export async function makeCall(target: string, withVideo = true, userId?: string
     try {
         // Check if UserAgent is initialized
         if (!ua) {
-            console.log("SIP User Agent not initialized. Attempting to initialize with stored credentials...");
+            logger.warn("SIP User Agent not initialized. Attempting to initialize with stored credentials...",
+                { target, withVideo }, "sipClient");
             
             // Check if we have stored SIP credentials
             const savedSipData = localStorage.getItem('sipData');
             
             if (!savedSipData) {
-                throw new Error("SIP User Agent not initialized and no stored credentials found. Please register first before making a call.");
+                const error = new Error("SIP User Agent not initialized and no stored credentials found. Please register first before making a call.");
+                logger.error("Failed to make call - no SIP credentials", { target, error: error.message }, "sipClient");
+                throw error;
             }
             
             try {
@@ -217,10 +239,22 @@ export async function makeCall(target: string, withVideo = true, userId?: string
                 const data = JSON.parse(savedSipData);
                 
                 if (!data.username || !data.password || !data.wsServer || !data.domain) {
-                    throw new Error("Incomplete SIP credentials found. Please register with complete information before making a call.");
+                    const error = new Error("Incomplete SIP credentials found. Please register with complete information before making a call.");
+                    logger.error("Failed to make call - incomplete SIP credentials",
+                        {
+                            target,
+                            hasUsername: !!data.username,
+                            hasPassword: !!data.password,
+                            hasWsServer: !!data.wsServer,
+                            hasDomain: !!data.domain
+                        },
+                        "sipClient");
+                    throw error;
                 }
                 
-                console.log("Initializing SIP User Agent with stored credentials...");
+                logger.info("Initializing SIP User Agent with stored credentials...",
+                    { username: data.username, domain: data.domain, wsServer: data.wsServer },
+                    "sipClient");
                 
                 // Construct SIP URI from username and domain
                 const sipUri = `sip:${data.username}@${data.domain}`;
@@ -237,15 +271,21 @@ export async function makeCall(target: string, withVideo = true, userId?: string
                     ]
                 });
                 
-                console.log("SIP User Agent initialized successfully with stored credentials.");
+                logger.info("SIP User Agent initialized successfully with stored credentials",
+                    { username: data.username, domain: data.domain },
+                    "sipClient");
             } catch (error) {
-                console.error("Failed to initialize SIP User Agent with stored credentials:", error);
+                logger.error("Failed to initialize SIP User Agent with stored credentials",
+                    { target, error: error instanceof Error ? error.message : String(error) },
+                    "sipClient");
                 throw new Error("Failed to initialize SIP User Agent with stored credentials. Please register again before making a call.");
             }
             
             // Check if UserAgent is now initialized
             if (!ua) {
-                throw new Error("SIP User Agent initialization failed. Please register manually before making a call.");
+                const error = new Error("SIP User Agent initialization failed. Please register manually before making a call.");
+                logger.error("SIP User Agent initialization failed", { target }, "sipClient");
+                throw error;
             }
         }
         
@@ -339,6 +379,15 @@ export async function makeCall(target: string, withVideo = true, userId?: string
         });
 
         currentSession = inviter;
+        
+        // Set session ID for logging
+        setSessionId(inviter.id);
+        
+        logger.info("Outgoing call created", {
+            sessionId: inviter.id,
+            target: formattedTarget,
+            withVideo
+        }, "sipClient");
 
         // Add handlers to intercept and log SDP
         inviter.stateChange.addListener((state) => {
@@ -509,6 +558,43 @@ export async function makeCall(target: string, withVideo = true, userId?: string
                         console.log(`RTCPeerConnection state: ${pc.connectionState}`);
                         console.log(`ICE connection state: ${pc.iceConnectionState}`);
                         console.log(`Signaling state: ${pc.signalingState}`);
+                        
+                        // Add listener for ICE connection state changes
+                        pc.addEventListener('iceconnectionstatechange', () => {
+                            console.log(`Outgoing call: ICE connection state changed to: ${pc.iceConnectionState}`);
+                            
+                            switch (pc.iceConnectionState) {
+                                case 'checking':
+                                    console.log('⏳ Outgoing call: ICE is checking connections...');
+                                    break;
+                                case 'connected':
+                                    console.log('✅ Outgoing call: ICE connection established successfully');
+                                    break;
+                                case 'completed':
+                                    console.log('✅ Outgoing call: ICE connection completed, all candidates gathered');
+                                    break;
+                                case 'failed':
+                                    console.error('❌ Outgoing call: ICE connection failed - could not find a valid connection');
+                                    // Try to gracefully terminate the call
+                                    try {
+                                        console.log('Attempting to terminate outgoing call after ICE failure');
+                                        if (inviter.state === 'Established') {
+                                            inviter.bye();
+                                        } else {
+                                            inviter.cancel();
+                                        }
+                                    } catch (error) {
+                                        console.error("Error terminating outgoing call after ICE failure:", error);
+                                    }
+                                    break;
+                                case 'disconnected':
+                                    console.warn('⚠️ Outgoing call: ICE connection disconnected - may recover automatically');
+                                    break;
+                                case 'closed':
+                                    console.log('Outgoing call: ICE connection closed');
+                                    break;
+                            }
+                        });
 
                         // Check audio senders
                         const senders = pc.getSenders();
@@ -656,164 +742,500 @@ export async function makeCall(target: string, withVideo = true, userId?: string
  * @param invitation The SIP.js Invitation object representing the incoming call
  * @param withVideo Whether to include video in the call
  * @param userId Optional user ID for call recording. If provided, the call will be recorded in the call history
- * @returns A Promise that resolves when the call is accepted
+ * @returns A Promise that resolves when the call is confirmed (fully established)
  */
 export async function acceptCall(invitation: Invitation, withVideo = true, userId?: string): Promise<void> {
     try {
+        // Set session ID for logging if not already set
+        setSessionId(invitation.id);
+        
         // Request media permissions before accepting the call
-        console.log(`Requesting media permissions for incoming call: audio=true, video=${withVideo}`);
-        const stream = await navigator.mediaDevices.getUserMedia({
-            audio: true,
-            video: withVideo
-        });
+        logger.info(`Requesting media permissions for incoming call`,
+            { sessionId: invitation.id, withVideo, from: invitation.remoteIdentity?.uri?.toString() || "Unknown" },
+            "sipClient");
+        
+        let stream;
+        try {
+            stream = await navigator.mediaDevices.getUserMedia({
+                audio: true,
+                video: withVideo
+            });
+            logger.info(`Local stream created successfully`,
+                { sessionId: invitation.id, audioTracks: stream.getAudioTracks().length, videoTracks: stream.getVideoTracks().length },
+                "sipClient");
+        } catch (mediaError) {
+            logger.error(`Failed to create local stream`,
+                { sessionId: invitation.id, error: mediaError instanceof Error ? mediaError.message : String(mediaError) },
+                "sipClient");
+            throw mediaError;
+        }
 
-        // Add state change listener to debug audio issues and record call events
-        invitation.stateChange.addListener((state) => {
-            console.log(`Incoming call state changed to: ${state}`);
-
-            // When call is established, check audio tracks and connection
-            if (state === 'Established') {
-                console.log('Incoming call established, checking audio tracks and connection...');
-                
-                // Record call start if userId is provided
-                if (userId) {
-                    console.log(`Recording incoming call start for user: ${userId}`);
-                    recordCallStart(userId, invitation, 'incoming')
-                        .then(recordEndFn => {
-                            // Store the function to record call end
-                            (invitation as any)._recordCallEnd = recordEndFn;
-                        })
-                        .catch(error => {
-                            console.error('Error recording incoming call start:', error);
-                        });
+        // Create a promise that will resolve when the call is confirmed or established
+        return new Promise((resolve, reject) => {
+            // Flag to track if the promise has been resolved or rejected
+            let isPromiseSettled = false;
+            
+            // Set a timeout to reject the promise if the call isn't confirmed within a reasonable time
+            const confirmationTimeout = setTimeout(() => {
+                if (!isPromiseSettled) {
+                    isPromiseSettled = true;
+                    logger.error(`Call confirmation timed out`, { sessionId: invitation.id }, "sipClient");
+                    reject(new Error("Call confirmation timed out after 60 seconds"));
                 }
+            }, 60000); // Increased from 30 to 60 seconds
 
-                if (invitation.sessionDescriptionHandler) {
-                    const sessionDescriptionHandler = invitation.sessionDescriptionHandler as any;
-                    if (sessionDescriptionHandler.peerConnection) {
-                        const pc = sessionDescriptionHandler.peerConnection;
+            // Add state change listener to handle call state changes
+            const stateChangeListener = (state: string) => {
+                logger.info(`Incoming call state changed`,
+                    { sessionId: invitation.id, state, from: invitation.remoteIdentity?.uri?.toString() || "Unknown" },
+                    "sipClient");
 
-                        // Log RTCPeerConnection state
-                        console.log(`RTCPeerConnection state: ${pc.connectionState}`);
-                        console.log(`ICE connection state: ${pc.iceConnectionState}`);
-                        console.log(`Signaling state: ${pc.signalingState}`);
-
-                        // Check audio senders
-                        const senders = pc.getSenders();
-                        console.log(`Total RTP senders: ${senders.length}`);
-
-                        // Check if we have any audio senders
-                        const audioSenders = senders.filter((sender: RTCRtpSender) => sender.track && sender.track.kind === 'audio');
-                        const hasEnabledAudioSender = audioSenders.some((sender: RTCRtpSender) => sender.track && sender.track.enabled);
-
-                        if (audioSenders.length === 0 || !hasEnabledAudioSender) {
-                            console.log('❌ No enabled audio tracks found for incoming call, attempting to add local tracks again...');
-
-                            // Try to get media stream again if needed
-                            navigator.mediaDevices.getUserMedia({ audio: true, video: withVideo })
-                                .then(newStream => {
-                                    // Add tracks from the new stream
-                                    newStream.getTracks().forEach(track => {
-                                        console.log(`Adding ${track.kind} track to peer connection for incoming call (retry)`);
-                                        pc.addTrack(track, newStream);
-                                    });
+                // Handle different call states
+                if (state === 'Accepted') {
+                    logger.info('Call accepted, waiting for confirmation or establishment...',
+                        { sessionId: invitation.id }, "sipClient");
+                    // This is an early state, we don't resolve the promise yet
+                } else if (state === 'Confirmed') {
+                    logger.info('Call confirmed! Call is now fully established.',
+                        { sessionId: invitation.id }, "sipClient");
+                    
+                    // Only proceed if the promise hasn't been settled yet
+                    if (!isPromiseSettled) {
+                        isPromiseSettled = true;
+                        
+                        // Clear the timeout since we've confirmed the call
+                        clearTimeout(confirmationTimeout);
+                        
+                        // Record call start if userId is provided - only after confirmation
+                        if (userId) {
+                            logger.info(`Recording incoming call start for user`,
+                                { sessionId: invitation.id, userId }, "sipClient");
+                            recordCallStart(userId, invitation, 'incoming')
+                                .then(recordEndFn => {
+                                    // Store the function to record call end
+                                    (invitation as any)._recordCallEnd = recordEndFn;
+                                    logger.debug('Call recording function stored',
+                                        { sessionId: invitation.id, userId }, "sipClient");
                                 })
-                                .catch(err => console.error('Failed to get media on retry for incoming call:', err));
+                                .catch(error => {
+                                    logger.error('Error recording incoming call start',
+                                        { sessionId: invitation.id, userId, error: error instanceof Error ? error.message : String(error) },
+                                        "sipClient");
+                                });
                         }
+                        
+                        // Resolve the promise to indicate the call is fully established
+                        resolve();
+                    }
+                } else if (state === 'Terminated') {
+                    logger.warn('Call terminated before it was confirmed or established',
+                        { sessionId: invitation.id }, "sipClient");
+                    
+                    // Only proceed if the promise hasn't been settled yet
+                    if (!isPromiseSettled) {
+                        isPromiseSettled = true;
+                        
+                        // Clear the timeout since the call was terminated
+                        clearTimeout(confirmationTimeout);
+                        
+                        // Reject the promise with an error
+                        const error = new Error("Call was terminated before it could be confirmed or established");
+                        logger.error('Call acceptance failed',
+                            { sessionId: invitation.id, error: error.message }, "sipClient");
+                        reject(error);
+                    }
+                    
+                    // Remove the listener to prevent memory leaks
+                    invitation.stateChange.removeListener(stateChangeListener);
+                } else if (state === 'Established') {
+                    logger.info('Incoming call established! This state can also be used to consider the call as active.',
+                        { sessionId: invitation.id }, "sipClient");
+                    
+                    // Only proceed if the promise hasn't been settled yet
+                    if (!isPromiseSettled) {
+                        isPromiseSettled = true;
+                        
+                        // Clear the timeout since we've established the call
+                        clearTimeout(confirmationTimeout);
+                        
+                        // Record call start if userId is provided - after establishment
+                        if (userId) {
+                            logger.info(`Recording incoming call start for user`,
+                                { sessionId: invitation.id, userId }, "sipClient");
+                            recordCallStart(userId, invitation, 'incoming')
+                                .then(recordEndFn => {
+                                    // Store the function to record call end
+                                    (invitation as any)._recordCallEnd = recordEndFn;
+                                    logger.debug('Call recording function stored',
+                                        { sessionId: invitation.id, userId }, "sipClient");
+                                })
+                                .catch(error => {
+                                    logger.error('Error recording incoming call start',
+                                        { sessionId: invitation.id, userId, error: error instanceof Error ? error.message : String(error) },
+                                        "sipClient");
+                                });
+                        }
+                        
+                        // Resolve the promise to indicate the call is established
+                        logger.debug('Resolving promise based on Established state',
+                            { sessionId: invitation.id }, "sipClient");
+                        resolve();
+                    }
+                    
+                    // Continue with audio track checks
+                    console.log('Checking audio tracks and connection...');
+                    
+                    if (invitation.sessionDescriptionHandler) {
+                        const sessionDescriptionHandler = invitation.sessionDescriptionHandler as any;
+                        if (sessionDescriptionHandler.peerConnection) {
+                            const pc = sessionDescriptionHandler.peerConnection;
 
-                        senders.forEach((sender: RTCRtpSender, index: number) => {
-                            if (sender.track) {
-                                console.log(`Sender ${index} track kind: ${sender.track.kind}`);
-                                console.log(`Sender ${index} track enabled: ${sender.track.enabled}`);
-                                console.log(`Sender ${index} track readyState: ${sender.track.readyState}`);
-                                console.log(`Sender ${index} track muted: ${sender.track.muted}`);
-
-                                // If it's an audio track, make sure it's enabled
-                                if (sender.track.kind === 'audio' && !sender.track.enabled) {
-                                    console.log('⚠️ Audio track was disabled, enabling it now');
-                                    sender.track.enabled = true;
+                            // Log RTCPeerConnection state
+                            console.log(`RTCPeerConnection state: ${pc.connectionState}`);
+                            console.log(`ICE connection state: ${pc.iceConnectionState}`);
+                            console.log(`Signaling state: ${pc.signalingState}`);
+                            
+                            // Add listener for ICE connection state changes
+                            pc.addEventListener('iceconnectionstatechange', () => {
+                                console.log(`ICE connection state changed to: ${pc.iceConnectionState}`);
+                                
+                                switch (pc.iceConnectionState) {
+                                    case 'checking':
+                                        console.log('⏳ ICE is checking connections...');
+                                        break;
+                                    case 'connected':
+                                        console.log('✅ ICE connection established successfully');
+                                        break;
+                                    case 'completed':
+                                        console.log('✅ ICE connection completed, all candidates gathered');
+                                        break;
+                                    case 'failed':
+                                        console.error('❌ ICE connection failed - could not find a valid connection');
+                                        // If the promise hasn't been settled yet, reject it
+                                        if (!isPromiseSettled) {
+                                            isPromiseSettled = true;
+                                            clearTimeout(confirmationTimeout);
+                                            reject(new Error("ICE connection failed - could not establish a connection"));
+                                            
+                                            // Try to gracefully terminate the call
+                                            try {
+                                                invitation.bye();
+                                            } catch (error) {
+                                                console.error("Error terminating call after ICE failure:", error);
+                                            }
+                                        }
+                                        break;
+                                    case 'disconnected':
+                                        console.warn('⚠️ ICE connection disconnected - may recover automatically');
+                                        break;
+                                    case 'closed':
+                                        console.log('ICE connection closed');
+                                        break;
                                 }
-                            } else {
-                                console.log(`Sender ${index} has no track`);
+                            });
+
+                            // Check audio senders
+                            const senders = pc.getSenders();
+                            console.log(`Total RTP senders: ${senders.length}`);
+
+                            // Check if we have any audio senders
+                            const audioSenders = senders.filter((sender: RTCRtpSender) => sender.track && sender.track.kind === 'audio');
+                            const hasEnabledAudioSender = audioSenders.some((sender: RTCRtpSender) => sender.track && sender.track.enabled);
+
+                            if (audioSenders.length === 0 || !hasEnabledAudioSender) {
+                                console.log('❌ No enabled audio tracks found for incoming call, attempting to add local tracks again...');
+
+                                // Try to get media stream again if needed
+                                navigator.mediaDevices.getUserMedia({ audio: true, video: withVideo })
+                                    .then(newStream => {
+                                        // Add tracks from the new stream
+                                        newStream.getTracks().forEach(track => {
+                                            console.log(`Adding ${track.kind} track to peer connection for incoming call (retry)`);
+                                            pc.addTrack(track, newStream);
+                                        });
+                                    })
+                                    .catch(err => console.error('Failed to get media on retry for incoming call:', err));
                             }
 
-                            // Log sender parameters
-                            const params = sender.getParameters();
-                            console.log(`Sender ${index} parameters:`, params);
-                        });
+                            senders.forEach((sender: RTCRtpSender, index: number) => {
+                                if (sender.track) {
+                                    console.log(`Sender ${index} track kind: ${sender.track.kind}`);
+                                    console.log(`Sender ${index} track enabled: ${sender.track.enabled}`);
+                                    console.log(`Sender ${index} track readyState: ${sender.track.readyState}`);
+                                    console.log(`Sender ${index} track muted: ${sender.track.muted}`);
 
-                        // Final check if there are any audio tracks
-                        if (audioSenders.length === 0) {
-                            console.error('❌ No audio tracks found in the RTCPeerConnection for incoming call!');
+                                    // If it's an audio track, make sure it's enabled
+                                    if (sender.track.kind === 'audio' && !sender.track.enabled) {
+                                        console.log('⚠️ Audio track was disabled, enabling it now');
+                                        sender.track.enabled = true;
+                                    }
+                                } else {
+                                    console.log(`Sender ${index} has no track`);
+                                }
+
+                                // Log sender parameters
+                                const params = sender.getParameters();
+                                console.log(`Sender ${index} parameters:`, params);
+                            });
+
+                            // Final check if there are any audio tracks
+                            if (audioSenders.length === 0) {
+                                console.error('❌ No audio tracks found in the RTCPeerConnection for incoming call!');
+                            }
+                        } else {
+                            console.error('❌ No peerConnection found in sessionDescriptionHandler');
                         }
                     } else {
-                        console.error('❌ No peerConnection found in sessionDescriptionHandler');
+                        console.error('❌ No sessionDescriptionHandler found in the session');
                     }
-                } else {
-                    console.error('❌ No sessionDescriptionHandler found in the session');
                 }
-            }
-        });
+            };
 
-        // Accept the invitation with the requested media constraints
-        await invitation.accept({
-            sessionDescriptionHandlerOptions: {
-                constraints: {
-                    audio: true,
-                    video: withVideo,
-                },
-            },
-        });
+            // Add the state change listener
+            invitation.stateChange.addListener(stateChangeListener);
 
-        // Store the current session
-        currentSession = invitation;
-
-        // Try to add tracks immediately if sessionDescriptionHandler is available
-        const addTracksToConnection = (session: any, mediaStream: MediaStream) => {
-            if (session.sessionDescriptionHandler) {
+            // Try to add tracks immediately if sessionDescriptionHandler is available
+            const addTracksToConnection = (session: any, mediaStream: MediaStream) => {
+                logger.info(`Attempting to add tracks to connection`,
+                    { sessionId: invitation.id, state: session.state },
+                    "sipClient");
+                
+                if (!mediaStream) {
+                    logger.error(`Cannot add tracks: Media stream is null or undefined`,
+                        { sessionId: invitation.id },
+                        "sipClient");
+                    return false;
+                }
+                
+                if (!session.sessionDescriptionHandler) {
+                    logger.error(`No sessionDescriptionHandler available yet for incoming call`,
+                        { sessionId: invitation.id },
+                        "sipClient");
+                    return false;
+                }
+                
                 const sessionDescriptionHandler = session.sessionDescriptionHandler as any;
-                if (sessionDescriptionHandler.peerConnection) {
-                    const pc = sessionDescriptionHandler.peerConnection;
+                if (!sessionDescriptionHandler.peerConnection) {
+                    logger.error(`No peerConnection found in sessionDescriptionHandler for incoming call`,
+                        { sessionId: invitation.id },
+                        "sipClient");
+                    return false;
+                }
+                
+                const pc = sessionDescriptionHandler.peerConnection;
+                
+                // Log connection state
+                logger.info(`RTCPeerConnection state before adding tracks`,
+                    {
+                        sessionId: invitation.id,
+                        connectionState: pc.connectionState,
+                        iceConnectionState: pc.iceConnectionState,
+                        signalingState: pc.signalingState
+                    },
+                    "sipClient");
 
-                    // Check if we already have senders with tracks
-                    const existingSenders = pc.getSenders();
-                    const hasAudioSender = existingSenders.some((sender: RTCRtpSender) =>
-                        sender.track && sender.track.kind === 'audio' && sender.track.enabled);
+                // Check if we already have senders with tracks
+                const existingSenders = pc.getSenders();
+                const audioSenders = existingSenders.filter((sender: RTCRtpSender) =>
+                    sender.track && sender.track.kind === 'audio');
+                const hasEnabledAudioSender = audioSenders.some((sender: RTCRtpSender) =>
+                    sender.track && sender.track.enabled);
 
-                    if (!hasAudioSender) {
-                        console.log('No active audio senders found, adding tracks to connection for incoming call');
+                logger.info(`Existing senders check`,
+                    {
+                        sessionId: invitation.id,
+                        totalSenders: existingSenders.length,
+                        audioSenders: audioSenders.length,
+                        hasEnabledAudioSender: hasEnabledAudioSender
+                    },
+                    "sipClient");
 
+                if (!hasEnabledAudioSender) {
+                    logger.info(`No active audio senders found, adding tracks to connection for incoming call`,
+                        { sessionId: invitation.id },
+                        "sipClient");
+
+                    try {
                         // Add tracks from the stream
+                        const audioTracks = mediaStream.getAudioTracks();
+                        const videoTracks = mediaStream.getVideoTracks();
+                        
+                        logger.info(`Available tracks in media stream`,
+                            {
+                                sessionId: invitation.id,
+                                audioTracks: audioTracks.length,
+                                videoTracks: videoTracks.length
+                            },
+                            "sipClient");
+                        
+                        // Add each track and log the result
                         mediaStream.getTracks().forEach(track => {
-                            console.log(`Adding ${track.kind} track to peer connection for incoming call`);
-                            pc.addTrack(track, mediaStream);
+                            try {
+                                logger.info(`Adding ${track.kind} track to peer connection`,
+                                    {
+                                        sessionId: invitation.id,
+                                        trackId: track.id,
+                                        trackEnabled: track.enabled,
+                                        trackMuted: track.muted
+                                    },
+                                    "sipClient");
+                                pc.addTrack(track, mediaStream);
+                            } catch (trackError) {
+                                logger.error(`Failed to add ${track.kind} track to peer connection`,
+                                    {
+                                        sessionId: invitation.id,
+                                        trackId: track.id,
+                                        error: trackError instanceof Error ? trackError.message : String(trackError)
+                                    },
+                                    "sipClient");
+                            }
                         });
-
+                        
+                        // Verify tracks were added
+                        const updatedSenders = pc.getSenders();
+                        logger.info(`Tracks added to connection`,
+                            {
+                                sessionId: invitation.id,
+                                sendersBefore: existingSenders.length,
+                                sendersAfter: updatedSenders.length
+                            },
+                            "sipClient");
+                            
                         return true;
-                    } else {
-                        console.log('Active audio senders already exist for incoming call');
+                    } catch (error) {
+                        logger.error(`Error adding tracks to connection`,
+                            {
+                                sessionId: invitation.id,
+                                error: error instanceof Error ? error.message : String(error)
+                            },
+                            "sipClient");
                         return false;
                     }
                 } else {
-                    console.error('❌ No peerConnection found in sessionDescriptionHandler for incoming call');
+                    logger.info(`Active audio senders already exist for incoming call`,
+                        { sessionId: invitation.id, audioSenders: audioSenders.length },
+                        "sipClient");
+                    return false;
                 }
-            } else {
-                console.error('❌ No sessionDescriptionHandler available yet for incoming call');
-            }
-            return false;
-        };
+            };
 
-        // Add state change listener to add tracks when sessionDescriptionHandler is available
-        invitation.stateChange.addListener((newState) => {
-            // Try to add tracks when the session is establishing or early in the call setup
-            if (newState === 'Establishing') {
-                console.log('Incoming call is establishing, trying to add tracks...');
-                addTracksToConnection(invitation, stream);
-            }
+            // Add state change listener to add tracks when sessionDescriptionHandler is available
+            invitation.stateChange.addListener((newState) => {
+                logger.info(`Incoming call state changed to ${newState}`,
+                    { sessionId: invitation.id, state: newState },
+                    "sipClient");
+                
+                // Try to add tracks at various states to ensure they're added
+                if (newState === 'Establishing' || newState === 'Established' || newState === 'Accepted') {
+                    logger.info(`Call in ${newState} state, attempting to add tracks...`,
+                        { sessionId: invitation.id },
+                        "sipClient");
+                    
+                    // Check if the peer connection exists and is in a good state before adding tracks
+                    if (invitation.sessionDescriptionHandler) {
+                        const sessionDescriptionHandler = invitation.sessionDescriptionHandler as any;
+                        if (sessionDescriptionHandler.peerConnection) {
+                            const pc = sessionDescriptionHandler.peerConnection;
+                            
+                            logger.info(`PeerConnection state check before adding tracks`,
+                                {
+                                    sessionId: invitation.id,
+                                    connectionState: pc.connectionState,
+                                    iceConnectionState: pc.iceConnectionState,
+                                    signalingState: pc.signalingState
+                                },
+                                "sipClient");
+                            
+                            // Only add tracks if the connection is in a good state
+                            if (pc.signalingState !== 'closed') {
+                                addTracksToConnection(invitation, stream);
+                            } else {
+                                logger.warn(`Not adding tracks: PeerConnection is in ${pc.signalingState} state`,
+                                    { sessionId: invitation.id },
+                                    "sipClient");
+                            }
+                        } else {
+                            logger.warn(`Not adding tracks: No PeerConnection available`,
+                                { sessionId: invitation.id },
+                                "sipClient");
+                        }
+                    } else {
+                        logger.warn(`Not adding tracks: No SessionDescriptionHandler available`,
+                            { sessionId: invitation.id },
+                            "sipClient");
+                    }
+                }
+            });
+
+            // Accept the invitation with the requested media constraints
+            invitation.accept({
+                sessionDescriptionHandlerOptions: {
+                    constraints: {
+                        audio: true,
+                        video: withVideo,
+                    },
+                },
+            }).then(() => {
+                logger.info('Call accepted, setting up track addition attempts',
+                    { sessionId: invitation.id },
+                    "sipClient");
+                
+                // Try to add tracks immediately after accepting the call
+                let trackAddAttempts = 0;
+                const maxTrackAddAttempts = 5;
+                const attemptTrackAdd = () => {
+                    if (isPromiseSettled) {
+                        logger.info('Promise already settled, not attempting to add tracks',
+                            { sessionId: invitation.id },
+                            "sipClient");
+                        return;
+                    }
+                    
+                    trackAddAttempts++;
+                    logger.info(`Attempting to add tracks (attempt ${trackAddAttempts}/${maxTrackAddAttempts})`,
+                        { sessionId: invitation.id },
+                        "sipClient");
+                    
+                    const added = addTracksToConnection(invitation, stream);
+                    
+                    // If tracks weren't added and we haven't reached max attempts, try again
+                    if (!added && trackAddAttempts < maxTrackAddAttempts) {
+                        const delay = 500 * Math.pow(2, trackAddAttempts - 1); // Exponential backoff: 500ms, 1s, 2s, 4s
+                        logger.info(`Scheduling next track addition attempt in ${delay}ms`,
+                            { sessionId: invitation.id, nextAttempt: trackAddAttempts + 1 },
+                            "sipClient");
+                        setTimeout(attemptTrackAdd, delay);
+                    } else if (added) {
+                        logger.info(`Successfully added tracks on attempt ${trackAddAttempts}`,
+                            { sessionId: invitation.id },
+                            "sipClient");
+                    } else {
+                        logger.warn(`Failed to add tracks after ${maxTrackAddAttempts} attempts`,
+                            { sessionId: invitation.id },
+                            "sipClient");
+                    }
+                };
+                
+                // Start the first attempt after a short delay
+                setTimeout(attemptTrackAdd, 100);
+                
+            }).catch(error => {
+                logger.error("Error accepting call",
+                    {
+                        sessionId: invitation.id,
+                        error: error instanceof Error ? error.message : String(error)
+                    },
+                    "sipClient");
+                clearTimeout(confirmationTimeout);
+                reject(error);
+                
+                // Remove the listener to prevent memory leaks
+                invitation.stateChange.removeListener(stateChangeListener);
+            });
+
+            // Store the current session
+            currentSession = invitation;
         });
-
-        // Don't stop the stream - SIP.js needs it for the call
-        // The stream will be managed by the WebRTC connection
     } catch (error) {
         console.error("Error accepting call:", error);
 
@@ -848,45 +1270,120 @@ export function hangupCall() {
     if (currentSession) {
         // Store a reference to the current session
         const session = currentSession;
+        const sessionId = session.id;
+        
+        logger.info(`Hanging up call`, { sessionId, state: session.state }, "sipClient");
 
-        if (session.state === "Established") {
+        // Handle different session states
+        if (session.state === "Established" || session.state === "Accepted" || session.state === "Confirmed") {
+            // For established or accepted calls, use bye()
+            logger.info(`Call in ${session.state} state, using bye() to terminate`, { sessionId }, "sipClient");
             session.bye();
         } else if (session.state === "Initial") {
-            // Check if the session is an Inviter before calling cancel()
+            // For initial state, use cancel() for outgoing calls or reject() for incoming calls
             if (session instanceof Inviter) {
+                logger.info('Outgoing call in Initial state, using cancel() to terminate', { sessionId }, "sipClient");
                 session.cancel();
-            }
-            // Check if the session is an Invitation (incoming call) and reject it
-            else if (session instanceof Invitation) {
+            } else if (session instanceof Invitation) {
+                logger.info('Incoming call in Initial state, using reject() to terminate', { sessionId }, "sipClient");
                 session.reject();
+            } else {
+                logger.warn('Unknown session type in Initial state, attempting to terminate', { sessionId }, "sipClient");
+                try {
+                    // Try to use bye() as a fallback
+                    session.bye();
+                } catch (error) {
+                    logger.error('Error terminating unknown session type',
+                        { sessionId, error: error instanceof Error ? error.message : String(error) },
+                        "sipClient");
+                }
+            }
+        } else {
+            // For any other state, handle based on session type
+            if (session instanceof Inviter) {
+                // For outgoing calls in early states, use cancel() unless already terminated
+                if (session.state === "Terminated") {
+                    // If the session is already terminated, just log it and don't try to terminate again
+                    logger.info(`Outgoing call already in Terminated state, no action needed`, { sessionId }, "sipClient");
+                } else {
+                    logger.info(`Outgoing call in ${session.state} state, using cancel() to terminate`, { sessionId }, "sipClient");
+                    try {
+                        session.cancel();
+                    } catch (error) {
+                        logger.error(`Error canceling outgoing call`,
+                            { sessionId, state: session.state, error: error instanceof Error ? error.message : String(error) },
+                            "sipClient");
+                    }
+                }
+            } else if (session instanceof Invitation) {
+                // For incoming calls, try to reject unless already terminated
+                if (session.state === "Terminated") {
+                    // If the session is already terminated, just log it and don't try to terminate again
+                    logger.info(`Incoming call already in Terminated state, no action needed`, { sessionId }, "sipClient");
+                } else {
+                    logger.info(`Incoming call in ${session.state} state, using reject() to terminate`, { sessionId }, "sipClient");
+                    try {
+                        session.reject();
+                    } catch (rejectError) {
+                        logger.error('Error rejecting call',
+                            { sessionId, error: rejectError instanceof Error ? rejectError.message : String(rejectError) },
+                            "sipClient");
+                    }
+                }
+            } else {
+                // For unknown session types, try bye() as a last resort unless already terminated
+                if (session.state === "Terminated") {
+                    // If the session is already terminated, just log it and don't try to terminate again
+                    logger.info(`Call already in Terminated state, no action needed`, { sessionId }, "sipClient");
+                } else {
+                    logger.info(`Call in ${session.state} state, attempting to terminate with bye() as last resort`, { sessionId }, "sipClient");
+                    try {
+                        session.bye();
+                    } catch (error) {
+                        logger.error(`Error terminating call with bye()`,
+                            { sessionId, state: session.state, error: error instanceof Error ? error.message : String(error) },
+                            "sipClient");
+                    }
+                }
             }
         }
 
         // Record call end if the function exists
         if ((session as any)._recordCallEnd && typeof (session as any)._recordCallEnd === 'function') {
-            console.log('Recording call end');
+            logger.info('Recording call end', { sessionId }, "sipClient");
             try {
                 (session as any)._recordCallEnd().catch((error: any) => {
-                    console.error('Error recording call end:', error);
+                    logger.error('Error recording call end',
+                        { sessionId, error: error instanceof Error ? error.message : String(error) },
+                        "sipClient");
                 });
             } catch (error) {
-                console.error('Error calling record call end function:', error);
+                logger.error('Error calling record call end function',
+                    { sessionId, error: error instanceof Error ? error.message : String(error) },
+                    "sipClient");
             }
         }
 
-        // Clean up the session reference immediately to prevent further operations on it
-        currentSession = null as unknown as Session;
-
-        // Add a one-time listener to handle any final cleanup after termination
+        // Add a one-time listener to handle final cleanup after termination
         const stateChangeListener = (state: string) => {
             if (state === "Terminated") {
-                console.log("Session terminated and cleaned up");
+                logger.info("Session terminated and cleaned up", { sessionId }, "sipClient");
                 // Remove the listener to prevent memory leaks
                 session.stateChange.removeListener(stateChangeListener);
             }
         };
-
+        
         session.stateChange.addListener(stateChangeListener);
+        
+        // Clean up the session reference after setting up the listener
+        // This ensures we don't lose the reference before the listener is added
+        logger.debug('Clearing current session reference', { sessionId }, "sipClient");
+        currentSession = null as unknown as Session;
+        
+        // Clear the session ID from logging context
+        setSessionId(null);
+    } else {
+        logger.info('No active call to hang up', {}, "sipClient");
     }
 }
 
