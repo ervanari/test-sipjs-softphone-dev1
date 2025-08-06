@@ -87,11 +87,34 @@ export default function SIPRegistration({
       };
       localStorage.setItem('sipData', JSON.stringify(sipData));
 
+      // Clean and validate the WebSocket server URL
+      let cleanWsServer = wsServerValue.trim();
+      
+      // Ensure there are no double protocols
+      cleanWsServer = cleanWsServer.replace(/wss?:\/\/\s+wss?:\/\//, 'wss://');
+      
+      console.log('Cleaned WebSocket server URL:', cleanWsServer);
+      
+      // Validate the URL format
+      try {
+        // Add protocol if missing for URL validation
+        let urlToValidate = cleanWsServer;
+        if (!urlToValidate.startsWith('wss://') && !urlToValidate.startsWith('ws://')) {
+          urlToValidate = `wss://${urlToValidate}`;
+        }
+        
+        // This will throw an error if the URL is invalid
+        new URL(urlToValidate);
+      } catch (error) {
+        console.error('Invalid WebSocket server URL:', cleanWsServer);
+        throw new Error(`Invalid WebSocket server URL: ${cleanWsServer}`);
+      }
+      
       // Initialize SIP client
       await initSIP({
         uri: sipUriValue,
         password: passwordValue,
-        wsServer: wsServerValue,
+        wsServer: cleanWsServer,
         onInvite: onIncomingCall,
         onMessage: onMessageReceived,
         onRegistrationFailed: (error) => {
@@ -110,6 +133,49 @@ export default function SIPRegistration({
       // If we have a userId, save the SIP configuration to the database
       if (userId) {
         try {
+          // Parse the WebSocket server URL to extract server, port, and whether to use WebSocket
+          let serverHost = cleanWsServer; // Use the cleaned URL
+          let serverPort = 443; // Default port
+          let useWs = true;
+          
+          console.log('Parsing WebSocket URL for database storage:', cleanWsServer);
+          
+          // Remove protocol (ws:// or wss://)
+          if (serverHost.startsWith('wss://')) {
+            serverHost = serverHost.substring(6);
+          } else if (serverHost.startsWith('ws://')) {
+            serverHost = serverHost.substring(5);
+          }
+          
+          // Trim again after removing protocol
+          serverHost = serverHost.trim();
+          
+          // Extract port if present
+          const portIndex = serverHost.indexOf(':');
+          if (portIndex !== -1) {
+            const portStr = serverHost.substring(portIndex + 1).split('/')[0];
+            serverPort = parseInt(portStr, 10) || 443;
+            serverHost = serverHost.substring(0, portIndex);
+          }
+          
+          // Check if /ws path is present
+          useWs = cleanWsServer.includes('/ws');
+          
+          // Remove any path from the server host
+          const pathIndex = serverHost.indexOf('/');
+          if (pathIndex !== -1) {
+            serverHost = serverHost.substring(0, pathIndex);
+          }
+          
+          // Final trim of the server host
+          serverHost = serverHost.trim();
+          
+          console.log('Parsed WebSocket URL components:', {
+            serverHost,
+            serverPort,
+            useWs
+          });
+          
           await fetch('/api/user-config', {
             method: 'POST',
             headers: {
@@ -117,12 +183,12 @@ export default function SIPRegistration({
             },
             body: JSON.stringify({
               userId,
-              sipServer: wsServerValue.replace('wss://', '').replace('/ws', ''),
+              sipServer: serverHost,
               sipUsername: usernameValue,
               sipPassword: passwordValue,
               sipDomain: domainValue,
-              sipPort: 443,
-              useWebSocket: true
+              sipPort: serverPort,
+              useWebSocket: useWs
             }),
           });
           console.log('SIP configuration saved to database');
@@ -243,10 +309,24 @@ export default function SIPRegistration({
             type="text"
             value={wsServer}
             onChange={(e) => setWsServer(e.target.value)}
-            placeholder="WebSocket Server URL"
+            placeholder="e.g., test-webrtc.example.com:8089/ws"
             className="w-full text-gray-800 p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#128C7E]"
             required
           />
+          <p className="mt-1 text-sm text-gray-500">
+            Enter the WebSocket server address. You can include or omit the protocol (wss://),
+            port number (:8089), and path (/ws). The system will handle the formatting.
+          </p>
+          <div className="mt-2 text-xs text-gray-500">
+            <p className="font-medium">Examples:</p>
+            <ul className="list-disc pl-5 space-y-1">
+              <li>test-webrtc.example.com</li>
+              <li>test-webrtc.example.com:8089</li>
+              <li>test-webrtc.example.com/ws</li>
+              <li>test-webrtc.example.com:8089/ws</li>
+              <li>wss://test-webrtc.example.com:8089/ws</li>
+            </ul>
+          </div>
         </div>
 
         <button

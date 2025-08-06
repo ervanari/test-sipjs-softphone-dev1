@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState, useRef } from "react";
+import { useRouter } from "next/navigation";
 import SIPRegistration from "../components/SIPRegistration";
 import Dialer from "../components/Dialer";
 import CallControls from "../components/CallControls";
@@ -27,6 +28,8 @@ export default function Home() {
   const [username, setUsername] = useState("");
   
   // Check if user is already authenticated when the page loads
+  const router = useRouter();
+  
   useEffect(() => {
     async function checkAuthStatus() {
       try {
@@ -38,6 +41,9 @@ export default function Home() {
           setIsAuthenticated(true);
           setUserId(data.id);
           setUsername(data.username);
+          
+          // Redirect to dashboard
+          router.push('/dashboard');
         }
       } catch (error) {
         console.error('Error checking authentication status:', error);
@@ -47,7 +53,7 @@ export default function Home() {
     }
     
     checkAuthStatus();
-  }, []);
+  }, [router]);
   
   // Call state
   const [incomingCall, setIncomingCall] = useState<any>(null);
@@ -80,6 +86,8 @@ export default function Home() {
     setIsAuthenticated(true);
     setUserId(userId);
     setUsername(userUsername);
+    // Redirect to dashboard
+    router.push('/dashboard');
   };
 
   // Handle user registration
@@ -87,6 +95,8 @@ export default function Home() {
     setIsAuthenticated(true);
     setUserId(userId);
     setUsername(userUsername);
+    // Redirect to dashboard
+    router.push('/dashboard');
   };
 
   // Switch to login form
@@ -127,12 +137,18 @@ export default function Home() {
       setShowLoginForm(true);
       
       console.log("✅ Successfully logged out");
+      
+      // Redirect to root page
+      router.push('/');
     } catch (error) {
       console.error("Error during logout:", error);
       // Even if there's an error, still reset the UI state
       setIsAuthenticated(false);
       setIsRegistered(false);
       setShowLoginForm(true);
+      
+      // Redirect to root page even on error
+      router.push('/');
     }
   };
   

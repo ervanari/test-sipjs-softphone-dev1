@@ -21,15 +21,30 @@ interface SIPConfig {
     onInvite?: (session: Invitation) => void;
     onMessage?: (message: string, from: string) => void;
     onRegistrationFailed?: (error: Error) => void;
+    onRegistrationRetry?: (attempt: number, maxRetries: number, delay: number) => void;
+    maxRetries?: number;
+    retryDelay?: number;
     iceServers?: RTCIceServer[];
 }
 
 export function initSIP(config: SIPConfig): Promise<void> {
     return new Promise((resolve, reject) => {
-        const { uri, password, wsServer, onInvite, onMessage, onRegistrationFailed, iceServers } = config;
+        const {
+            uri,
+            password,
+            wsServer,
+            onInvite,
+            onMessage,
+            onRegistrationFailed,
+            onRegistrationRetry,
+            maxRetries = 0,
+            retryDelay = 2000,
+            iceServers
+        } = config;
 
         let isPromiseSettled = false;
         let registrationTimeout: NodeJS.Timeout | null = null;
+        let retryCount = 0;
 
         const userAgentOptions: UserAgentOptions = {
             uri: UserAgent.makeURI(uri),
@@ -127,9 +142,27 @@ export function initSIP(config: SIPConfig): Promise<void> {
                         case "Unregistered":
                             console.log("❌ SIP unregistered");
                             if (!isPromiseSettled) {
-                                const error = new Error("Registration failed or expired.");
-                                console.error("❌ SIP registration failed or expired:", error);
-                                safeReject(error);
+                                if (retryCount < maxRetries) {
+                                    retryCount++;
+                                    console.log(`Retrying SIP registration (${retryCount}/${maxRetries})...`);
+                                    
+                                    // Call the retry callback if provided
+                                    if (onRegistrationRetry) {
+                                        onRegistrationRetry(retryCount, maxRetries, retryDelay);
+                                    }
+                                    
+                                    // Attempt to register again after the specified delay
+                                    setTimeout(() => {
+                                        if (!isPromiseSettled && registerer) {
+                                            console.log(`Retry attempt ${retryCount}/${maxRetries}`);
+                                            registerer.register();
+                                        }
+                                    }, retryDelay);
+                                } else {
+                                    const error = new Error("Registration failed or expired.");
+                                    console.error("❌ SIP registration failed or expired after " + maxRetries + " retries:", error);
+                                    safeReject(error);
+                                }
                             }
                             break;
                         case "Terminated":

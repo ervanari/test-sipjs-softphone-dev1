@@ -101,7 +101,7 @@ export default function CallHistoryPage() {
     <div className="container mx-auto px-4 py-8">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-[#128C7E]">Call History</h1>
-        <Link href="/" className="text-[#128C7E] hover:underline">
+        <Link href="/call" className="text-[#128C7E] hover:underline">
           Back to Dialer
         </Link>
       </div>
