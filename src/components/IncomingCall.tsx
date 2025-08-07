@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { acceptCall, hangupCall } from "../lib/sipClient";
+import { acceptCall, hangupCall, currentSession } from "../lib/sipClient";
+import useSipStore from "../lib/store/useSipStore";
 
 interface IncomingCallProps {
   invitation: any;
@@ -70,6 +71,9 @@ export default function IncomingCall({ invitation, userId, onAccept, onReject, o
 
   const [acceptError, setAcceptError] = useState<string | null>(null);
   const [isAccepting, setIsAccepting] = useState(false);
+  
+  // Get Zustand store actions
+  const { setCurrentSession, setCallState } = useSipStore();
 
   const handleAccept = async (withVideo: boolean) => {
     if (!invitation) return;
@@ -90,12 +94,22 @@ export default function IncomingCall({ invitation, userId, onAccept, onReject, o
       
       console.log("Call confirmed successfully, transitioning to In Call state");
       
+      // Store the session in the Zustand store
+      if (currentSession) {
+        console.log("Storing current session in Zustand store after acceptance", currentSession.id);
+        setCurrentSession(currentSession);
+        setCallState('established');
+      } else {
+        console.warn("No current session available after acceptCall");
+      }
+      
       // Only notify parent component after call is confirmed
       onAccept();
     } catch (error) {
       console.error("Failed to accept call:", error);
       setAcceptError(error instanceof Error ? error.message : "Failed to accept call");
       setIsAccepting(false);
+      setCallState('idle');
     }
   };
 

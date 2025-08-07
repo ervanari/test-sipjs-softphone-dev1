@@ -1,5 +1,19 @@
 'use client';
 
+/**
+ * User Configuration Page
+ *
+ * This page allows users to configure their SIP account settings.
+ * The form and functionality have been updated to match the SIPRegistration component.
+ *
+ * Changes made:
+ * 1. Added SIPRegistration-style form state (username, password, domain, wsServer)
+ * 2. Updated the useEffect hook to populate these form state variables
+ * 3. Implemented WebSocket URL validation and parsing logic from SIPRegistration
+ * 4. Updated the form layout and styling to match SIPRegistration
+ * 5. Added helpful examples and guidance for WebSocket server input
+ */
+
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/hooks/useAuth';
 import Link from 'next/link';
@@ -28,10 +42,16 @@ export default function UserConfigPage() {
     sipServer: '',
     sipUsername: '',
     sipPassword: '',
-    sipDomain: '',
+    sipDomain: 'jsmwebrtc.my.id', // Default domain
     sipPort: 5060,
     useWebSocket: true
   });
+  
+  // SIPRegistration-style form state for better UX
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [domain, setDomain] = useState('jsmwebrtc.my.id'); // Default domain
+  const [wsServer, setWsServer] = useState('wss://jsmwebrtc.my.id:443/ws'); // Default WebSocket server URL
 
   // Fetch user config on load
   useEffect(() => {
@@ -51,7 +71,20 @@ export default function UserConfigPage() {
         } else {
           const result = await response.json();
           if (result.data) {
-            setConfig(result.data);
+            const userData = result.data;
+            setConfig(userData);
+            
+            // Also update the SIPRegistration-style form state
+            setUsername(userData.sipUsername);
+            setPassword(userData.sipPassword);
+            setDomain(userData.sipDomain);
+            
+            // Construct WebSocket URL from the saved config
+            const protocol = userData.useWebSocket ? 'wss://' : 'sip:';
+            const port = userData.sipPort ? `:${userData.sipPort}` : '';
+            const path = userData.useWebSocket ? '/ws' : '';
+            const constructedWsServer = `${protocol}${userData.sipServer}${port}${path}`;
+            setWsServer(constructedWsServer);
           }
         }
       } catch (err) {
@@ -65,17 +98,8 @@ export default function UserConfigPage() {
     fetchUserConfig();
   }, [user]);
 
-  // Update form state
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value, type, checked } = e.target;
-    
-    setConfig(prev => ({
-      ...prev,
-      [name]: type === 'checkbox' ? checked :
-              type === 'number' ? (value === '' ? '' : parseInt(value, 10)) :
-              value
-    }));
-  };
+  // This handleChange function is no longer needed as we're using direct state setters
+  // for username, password, domain, and wsServer
 
   // Save configuration
   const handleSubmit = async (e: React.FormEvent) => {
@@ -88,11 +112,81 @@ export default function UserConfigPage() {
     setSuccessMessage(null);
     
     try {
-      // Ensure sipPort is a valid number before saving
+      // Clean and validate the WebSocket server URL
+      let cleanWsServer = wsServer.trim();
+      
+      // Ensure there are no double protocols
+      cleanWsServer = cleanWsServer.replace(/wss?:\/\/\s+wss?:\/\//, 'wss://');
+      
+      console.log('Cleaned WebSocket server URL:', cleanWsServer);
+      
+      // Validate the URL format
+      try {
+        // Add protocol if missing for URL validation
+        let urlToValidate = cleanWsServer;
+        if (!urlToValidate.startsWith('wss://') && !urlToValidate.startsWith('ws://')) {
+          urlToValidate = `wss://${urlToValidate}`;
+        }
+        
+        // This will throw an error if the URL is invalid
+        new URL(urlToValidate);
+      } catch (error) {
+        console.error('Invalid WebSocket server URL:', cleanWsServer);
+        throw new Error(`Invalid WebSocket server URL: ${cleanWsServer}`);
+      }
+      
+      // Parse the WebSocket server URL to extract server, port, and whether to use WebSocket
+      let serverHost = cleanWsServer; // Use the cleaned URL
+      let serverPort = 5060; // Default port
+      let useWs = true;
+      
+      console.log('Parsing WebSocket URL for database storage:', cleanWsServer);
+      
+      // Remove protocol (ws:// or wss://)
+      if (serverHost.startsWith('wss://')) {
+        serverHost = serverHost.substring(6);
+      } else if (serverHost.startsWith('ws://')) {
+        serverHost = serverHost.substring(5);
+      }
+      
+      // Trim again after removing protocol
+      serverHost = serverHost.trim();
+      
+      // Extract port if present
+      const portIndex = serverHost.indexOf(':');
+      if (portIndex !== -1) {
+        const portStr = serverHost.substring(portIndex + 1).split('/')[0];
+        serverPort = parseInt(portStr, 10) || 5060;
+        serverHost = serverHost.substring(0, portIndex);
+      }
+      
+      // Check if /ws path is present
+      useWs = cleanWsServer.includes('/ws');
+      
+      // Remove any path from the server host
+      const pathIndex = serverHost.indexOf('/');
+      if (pathIndex !== -1) {
+        serverHost = serverHost.substring(0, pathIndex);
+      }
+      
+      // Final trim of the server host
+      serverHost = serverHost.trim();
+      
+      console.log('Parsed WebSocket URL components:', {
+        serverHost,
+        serverPort,
+        useWs
+      });
+      
+      // Prepare the configuration to save
       const configToSave = {
-        ...config,
         userId: user.id,
-        sipPort: config.sipPort === '' ? 5060 : config.sipPort
+        sipServer: serverHost,
+        sipUsername: username,
+        sipPassword: password,
+        sipDomain: domain,
+        sipPort: serverPort,
+        useWebSocket: useWs
       };
       
       const response = await fetch('/api/user-config', {
@@ -107,6 +201,9 @@ export default function UserConfigPage() {
         const errorData = await response.json();
         throw new Error(errorData.error || 'Failed to save configuration');
       }
+      
+      // Update the config state with the saved values
+      setConfig(configToSave);
       
       setSuccessMessage('Configuration saved successfully!');
       
@@ -136,25 +233,33 @@ export default function UserConfigPage() {
 
   return (
     <div className="container mx-auto max-w-3xl">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-[#128C7E]">SIP Account Configuration</h1>
-        <p className="text-gray-600">Configure your SIP account settings for the softphone</p>
-      </div>
-
       {isLoading ? (
         <div className="flex justify-center items-center py-8">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#128C7E]"></div>
         </div>
       ) : (
-        <div className="bg-white rounded-lg shadow p-6">
+        <div className="bg-white rounded-lg shadow-md overflow-hidden">
+          <div className="bg-[#128C7E] text-white p-4">
+            <h2 className="text-xl font-semibold">User Configuration</h2>
+          </div>
+          
           {error && (
-            <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-6 rounded">
-              {error}
+            <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4">
+              <div className="flex">
+                <div className="flex-shrink-0">
+                  <svg className="h-5 w-5 text-red-500" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                  </svg>
+                </div>
+                <div className="ml-3">
+                  <p className="text-sm">{error}</p>
+                </div>
+              </div>
             </div>
           )}
           
           {successMessage && (
-            <div className="bg-green-100 border-l-4 border-green-500 text-green-700 p-4 mb-6 rounded">
+            <div className="bg-green-100 border-l-4 border-green-500 text-green-700 p-4">
               <div className="flex justify-between items-center">
                 <div>{successMessage}</div>
                 <Link href="/call" className="bg-green-600 text-white py-2 px-4 rounded font-medium hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-50">
@@ -165,124 +270,102 @@ export default function UserConfigPage() {
           )}
           
           <form onSubmit={handleSubmit}>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-              {/* SIP Server */}
+            <div className="p-6 space-y-6">
+              {/* Username */}
               <div>
-                <label htmlFor="sipServer" className="block text-sm font-medium text-gray-700 mb-1">
-                  SIP Server (WebSocket URL)
+                <label htmlFor="username" className="block text-sm font-medium text-gray-700 mb-1">
+                  Username
                 </label>
                 <input
+                  id="username"
                   type="text"
-                  id="sipServer"
-                  name="sipServer"
-                  value={config.sipServer}
-                  onChange={handleChange}
-                  placeholder="wss://sip-server.example.com"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-[#128C7E] focus:border-[#128C7E]"
-                  required
-                />
-                <p className="mt-1 text-xs text-gray-500">
-                  WebSocket URL for your SIP server
-                </p>
-              </div>
-              
-              {/* SIP Domain */}
-              <div>
-                <label htmlFor="sipDomain" className="block text-sm font-medium text-gray-700 mb-1">
-                  SIP Domain
-                </label>
-                <input
-                  type="text"
-                  id="sipDomain"
-                  name="sipDomain"
-                  value={config.sipDomain}
-                  onChange={handleChange}
-                  placeholder="example.com"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-[#128C7E] focus:border-[#128C7E]"
-                  required
-                />
-                <p className="mt-1 text-xs text-gray-500">
-                  Your SIP domain
-                </p>
-              </div>
-              
-              {/* SIP Username */}
-              <div>
-                <label htmlFor="sipUsername" className="block text-sm font-medium text-gray-700 mb-1">
-                  SIP Username
-                </label>
-                <input
-                  type="text"
-                  id="sipUsername"
-                  name="sipUsername"
-                  value={config.sipUsername}
-                  onChange={handleChange}
-                  placeholder="username"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-[#128C7E] focus:border-[#128C7E]"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="Username"
+                  className="w-full text-gray-800 p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#128C7E]"
                   required
                 />
               </div>
-              
-              {/* SIP Password */}
+
+              {/* Domain */}
               <div>
-                <label htmlFor="sipPassword" className="block text-sm font-medium text-gray-700 mb-1">
-                  SIP Password
+                <label htmlFor="domain" className="block text-sm font-medium text-gray-700 mb-1">
+                  Domain
                 </label>
                 <input
+                  id="domain"
+                  type="text"
+                  value={domain}
+                  onChange={(e) => setDomain(e.target.value)}
+                  placeholder="Domain"
+                  className="w-full text-gray-800 p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#128C7E]"
+                  required
+                />
+              </div>
+
+              {/* Password */}
+              <div>
+                <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
+                  Password
+                </label>
+                <input
+                  id="password"
                   type="password"
-                  id="sipPassword"
-                  name="sipPassword"
-                  value={config.sipPassword}
-                  onChange={handleChange}
-                  placeholder="••••••••"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-[#128C7E] focus:border-[#128C7E]"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Password"
+                  className="w-full text-gray-800 p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#128C7E]"
                   required
                 />
               </div>
-              
-              {/* SIP Port */}
+
+              {/* WebSocket Server */}
               <div>
-                <label htmlFor="sipPort" className="block text-sm font-medium text-gray-700 mb-1">
-                  SIP Port
+                <label htmlFor="wsServer" className="block text-sm font-medium text-gray-700 mb-1">
+                  WebSocket Server
                 </label>
                 <input
-                  type="number"
-                  id="sipPort"
-                  name="sipPort"
-                  value={config.sipPort}
-                  onChange={handleChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-[#128C7E] focus:border-[#128C7E]"
+                  id="wsServer"
+                  type="text"
+                  value={wsServer}
+                  onChange={(e) => setWsServer(e.target.value)}
+                  placeholder="e.g., test-webrtc.example.com:8089/ws"
+                  className="w-full text-gray-800 p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#128C7E]"
                   required
                 />
-                <p className="mt-1 text-xs text-gray-500">
-                  Default: 5060 (SIP), 5061 (SIPS), or 443 (WSS)
+                <p className="mt-1 text-sm text-gray-500">
+                  Enter the WebSocket server address. You can include or omit the protocol (wss://),
+                  port number (:8089), and path (/ws). The system will handle the formatting.
                 </p>
+                <div className="mt-2 text-xs text-gray-500">
+                  <p className="font-medium">Examples:</p>
+                  <ul className="list-disc pl-5 space-y-1">
+                    <li>test-webrtc.example.com</li>
+                    <li>test-webrtc.example.com:8089</li>
+                    <li>test-webrtc.example.com/ws</li>
+                    <li>test-webrtc.example.com:8089/ws</li>
+                    <li>wss://test-webrtc.example.com:8089/ws</li>
+                  </ul>
+                </div>
               </div>
-              
-              {/* Use WebSocket */}
-              <div className="flex items-center">
-                <input
-                  type="checkbox"
-                  id="useWebSocket"
-                  name="useWebSocket"
-                  checked={config.useWebSocket}
-                  onChange={handleChange}
-                  className="h-4 w-4 text-[#128C7E] focus:ring-[#128C7E] border-gray-300 rounded"
-                />
-                <label htmlFor="useWebSocket" className="ml-2 block text-sm text-gray-700">
-                  Use WebSocket Transport
-                </label>
-              </div>
-            </div>
-            
-            {/* Submit Button */}
-            <div className="flex justify-end">
+
+              {/* Submit Button */}
               <button
                 type="submit"
-                disabled={isSaving}
-                className="bg-[#128C7E] text-white py-2 px-6 rounded-md font-medium hover:bg-[#0c6b5f] focus:outline-none focus:ring-2 focus:ring-[#128C7E] focus:ring-opacity-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={isSaving || !username || !password || !wsServer || !domain}
+                className="w-full bg-[#128C7E] hover:bg-[#0e6b5e] text-white font-bold py-3 px-4 rounded-md disabled:opacity-50 transition duration-200"
               >
-                {isSaving ? 'Saving...' : 'Save Configuration'}
+                {isSaving ? (
+                  <div className="flex items-center justify-center">
+                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Saving...
+                  </div>
+                ) : (
+                  "Save Configuration"
+                )}
               </button>
             </div>
           </form>

@@ -1,9 +1,11 @@
 'use client';
 
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { initSIP, unregisterSIP } from '@/lib/sipClient';
+import { initSIP, unregisterSIP, ua, currentSession } from '@/lib/sipClient';
 import IncomingCall from './IncomingCall';
 import { useAuth } from '@/lib/hooks/useAuth';
+import { useRouter } from 'next/navigation';
+import useSipStore from '@/lib/store/useSipStore';
 
 // Define the context type
 interface SIPContextType {
@@ -27,22 +29,37 @@ interface SIPProviderProps {
 }
 
 export default function SIPProvider({ children }: SIPProviderProps) {
+  const router = useRouter();
   const { user } = useAuth();
   const [isRegistered, setIsRegistered] = useState(false);
   const [domain, setDomain] = useState('');
   const [username, setUsername] = useState('');
   const [incomingCall, setIncomingCall] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
+  
+  // Get Zustand store actions
+  const {
+    setCurrentSession,
+    setUserAgent,
+    setIsIncomingCall,
+    setCallState
+  } = useSipStore();
 
   // Handle incoming call
   const handleIncomingCall = (invitation: any) => {
     console.log('Incoming call received:', invitation);
     setIncomingCall(invitation);
+    setIsIncomingCall(true);
+    setCallState('ringing');
+    // Store the session in Zustand store
+    setCurrentSession(invitation);
   };
 
   // Handle call rejection
   const handleCallRejected = () => {
     setIncomingCall(null);
+    setIsIncomingCall(false);
+    setCallState('idle');
   };
 
   // Handle hiding incoming call without accepting/rejecting
@@ -52,14 +69,14 @@ export default function SIPProvider({ children }: SIPProviderProps) {
 
   // Handle call acceptance
   const handleCallAccepted = () => {
-    // Store the current invitation before clearing it
-    const currentInvitation = incomingCall;
+    // The session is already stored in the Zustand store
+    // Just clear the local state and navigate to the call page
     setIncomingCall(null);
+    setCallState('establishing');
     
-    // Redirect to call page with the invitation
-    // In a real implementation, you would need to pass the invitation to the call page
-    // This could be done through a global state management solution or URL parameters
-    window.location.href = '/call';
+    // Use Next.js router for navigation instead of window.location
+    // This preserves the JavaScript state across page navigations
+    router.push('/call');
   };
 
   // Load SIP configuration and register
@@ -103,7 +120,7 @@ export default function SIPProvider({ children }: SIPProviderProps) {
                 console.log('SIP client already initialized, setting up onInvite handler');
                 if (ua.delegate) {
                   const originalOnInvite = ua.delegate.onInvite;
-                  ua.delegate.onInvite = (invitation) => {
+                  ua.delegate.onInvite = (invitation: any) => {
                     // Call the original onInvite if it exists
                     if (originalOnInvite) {
                       originalOnInvite(invitation);
@@ -152,17 +169,18 @@ export default function SIPProvider({ children }: SIPProviderProps) {
         const sipUri = `sip:${sipConfig.username}@${sipConfig.domain}`;
         let wsServer = sipConfig.wsServer || sipConfig.server;
         
+        console.log('SIP configuration:', sipConfig);
         // Ensure WebSocket URL has the correct format
         if (sipConfig.useWebSocket !== false) {
           if (!wsServer.startsWith('wss://') && !wsServer.startsWith('ws://')) {
             wsServer = `wss://${wsServer}`;
           }
-          
+
           // Add port if not included in the URL
           if (!wsServer.includes(':')) {
             wsServer = `${wsServer}:${sipConfig.port || 443}`;
           }
-          
+
           // Add /ws path if not included
           if (!wsServer.includes('/ws')) {
             wsServer = `${wsServer}/ws`;
@@ -177,14 +195,24 @@ export default function SIPProvider({ children }: SIPProviderProps) {
           password: sipConfig.password,
           wsServer: wsServer,
           onInvite: handleIncomingCall,
-          maxRetries: 3,
-          retryDelay: 2000,
           iceServers: [
             { urls: 'stun:stun.l.google.com:19302' },
             { urls: 'stun:stun1.l.google.com:19302' },
             { urls: 'stun:stun2.l.google.com:19302' }
           ]
         });
+        
+        // Store the user agent in the Zustand store
+        if (ua) {
+          console.log('Storing user agent in Zustand store');
+          setUserAgent(ua);
+          
+          // If there's an active session, store it too
+          if (currentSession) {
+            console.log('Storing current session in Zustand store');
+            setCurrentSession(currentSession);
+          }
+        }
         
         // Update state with registration info
         setIsRegistered(true);

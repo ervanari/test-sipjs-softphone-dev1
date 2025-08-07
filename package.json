@@ -30,7 +30,8 @@
     "prisma": "^6.13.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "sip.js": "^0.21.2"
+    "sip.js": "^0.21.2",
+    "zustand": "^5.0.7"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

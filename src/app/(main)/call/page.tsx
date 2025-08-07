@@ -6,14 +6,19 @@ import Dialer from '@/components/Dialer';
 import CallControls, { CallControlsRef } from '@/components/CallControls';
 import VideoPanel from '@/components/VideoPanel';
 import Link from 'next/link';
+import useSipStore from '@/lib/store/useSipStore';
 
 export default function CallPage() {
   const { user } = useAuth();
+  
+  // Get session from Zustand store
+  const { currentSession, callState } = useSipStore();
 
   // Call state
   const [inCall, setInCall] = useState(false);
-  const [currentSession, setCurrentSession] = useState(null);
   const [callStatus, setCallStatus] = useState<"connected" | "connecting" | "reconnecting" | undefined>();
+  
+  // Note: We're using the session from the Zustand store directly, not local state
 
   // Media streams
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
@@ -23,6 +28,24 @@ export default function CallPage() {
 
   // Refs for component methods
   const callControlsRef = useRef<CallControlsRef>(null);
+  
+  // Initialize call state based on the session from Zustand store
+  useEffect(() => {
+    if (currentSession) {
+      console.log('Found active session in Zustand store:', currentSession.id);
+      setInCall(true);
+      
+      // Set call status based on call state
+      if (callState === 'establishing') {
+        setCallStatus('connecting');
+      } else if (callState === 'established') {
+        setCallStatus('connected');
+      }
+      
+      // Set up session listeners and handle media
+      handleCallInitiated(currentSession);
+    }
+  }, [currentSession, callState]);
 
   // Handle video toggle
   const handleVideoToggle = () => {
@@ -45,15 +68,31 @@ export default function CallPage() {
   };
 
   const handleCallInitiated = (session: any) => {
+    // Get the setCurrentSession and setCallState actions from the Zustand store
+    const { setCurrentSession, setCallState } = useSipStore.getState();
+    
+    // Update the Zustand store with the session
     setCurrentSession(session);
+    setCallState('establishing');
+    
+    // Update local component state
     setInCall(true);
     setCallStatus('connecting');
-    console.log('Call initiated with session:', session);
+    console.log('Call initiated with session:', session?.id || 'unknown', 'and stored in Zustand store');
 
     // Listen for call establishment to get media streams
     if (session && session.stateChange) {
       session.stateChange.addListener((state: string) => {
+        // Get the setCallState action from the Zustand store
+        const { setCallState } = useSipStore.getState();
+        
+        console.log(`Call state changed to: ${state}`);
+        
         if (state === "Established" && session.sessionDescriptionHandler && session.sessionDescriptionHandler.peerConnection) {
+          // Update the Zustand store with the established state
+          setCallState('established');
+          console.log('Call established, updating Zustand store');
+          
           const pc = session.sessionDescriptionHandler.peerConnection;
 
           // Get local stream
@@ -131,7 +170,12 @@ export default function CallPage() {
             }, 1000);
           }
         } else if (state === "Terminated") {
-          // Call ended
+          // Update the Zustand store with the terminated state
+          setCallState('terminated');
+          setCurrentSession(null);
+          console.log('Call terminated, updating Zustand store');
+          
+          // Call ended - update local component state
           setInCall(false);
           setLocalStream(null);
           setRemoteStream(null);
@@ -140,9 +184,28 @@ export default function CallPage() {
       });
     } else {
       console.error("Cannot add state change listener: session.stateChange is undefined");
+      
+      // Add error logging for debugging
+      console.error("Session details:", {
+        id: session?.id,
+        hasSessionDescriptionHandler: !!session?.sessionDescriptionHandler,
+        state: session?.state,
+        hasInvite: !!session?.invite,
+        hasAccept: !!session?.accept
+      });
+      
       // Set a timeout to end the call if we can't monitor its state
       setTimeout(() => {
         if (inCall) {
+          // Get the Zustand store actions
+          const { setCallState, setCurrentSession } = useSipStore.getState();
+          
+          // Update the Zustand store
+          setCallState('terminated');
+          setCurrentSession(null);
+          console.log('Call terminated due to timeout, updating Zustand store');
+          
+          // Update local component state
           setInCall(false);
           setLocalStream(null);
           setRemoteStream(null);
@@ -191,7 +254,7 @@ export default function CallPage() {
             <CallControls
               domain="sip.example.com"
               inCall={inCall}
-              currentSession={currentSession}
+              currentSession={useSipStore.getState().currentSession}
               ref={callControlsRef}
             />
           </div>
