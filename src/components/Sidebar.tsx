@@ -139,8 +139,8 @@ export default function Sidebar({ isOpen, toggleSidebar }: SidebarProps) {
                     className={`
                       flex items-center px-4 py-3 text-sm
                       ${item.isActive
-                        ? 'bg-white bg-opacity-20 border-r-4 border-white'
-                        : 'hover:bg-white hover:bg-opacity-10'
+                        ? 'bg-gray-500 bg-opacity-20 border-r-4 border-white'
+                        : 'hover:bg-gray-300 hover:bg-opacity-10'
                       }
                       ${!isOpen ? 'justify-center' : 'justify-start'}
                     `}

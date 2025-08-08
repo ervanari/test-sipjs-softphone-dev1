@@ -151,11 +151,31 @@ export default function IncomingCall({ invitation, userId, onAccept, onReject, o
     : callerUri;
 
   return (
-    <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-75 z-50">
-      <div className="max-w-md w-full relative">
+    <div
+      className="fixed inset-0 flex items-center justify-center z-30 animate-fadeIn"
+      onClick={(e) => e.target === e.currentTarget && handleHide()}
+    >
+      <div
+        className="bg-gray-800 rounded-xl shadow-2xl max-w-md w-full relative transform transition-all duration-300 animate-scaleIn p-6 border border-gray-700 mx-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Modal Header with close button */}
+        <div className="flex items-center justify-between border-b border-gray-700 pb-4 mb-4">
+          <h3 className="text-xl font-semibold text-white">Incoming Call</h3>
+          {/*<button*/}
+          {/*  onClick={handleHide}*/}
+          {/*  className="text-gray-400 hover:text-white transition-colors"*/}
+          {/*  aria-label="Close dialog"*/}
+          {/*>*/}
+          {/*  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">*/}
+          {/*    <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />*/}
+          {/*  </svg>*/}
+          {/*</button>*/}
+        </div>
+        
         {/* Caller Info */}
-        <div className="text-center mb-8">
-          <div className="w-24 h-24 bg-[#128C7E] rounded-full flex items-center justify-center mx-auto mb-6 animate-pulse">
+        <div className="text-center mb-6">
+          <div className="w-24 h-24 bg-[#128C7E] rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse shadow-lg">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
             </svg>
@@ -178,7 +198,7 @@ export default function IncomingCall({ invitation, userId, onAccept, onReject, o
           {/* Reject Button */}
           <button
             onClick={handleReject}
-            className="w-16 h-16 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center transition duration-200 transform hover:scale-105"
+            className="w-16 h-16 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center transition duration-200 transform hover:scale-105 shadow-lg"
             aria-label="Reject call"
           >
             <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" viewBox="0 0 20 20" fill="currentColor">
@@ -191,7 +211,7 @@ export default function IncomingCall({ invitation, userId, onAccept, onReject, o
             /* Accept Video Button */
             <button
               onClick={() => handleAccept(true)}
-              className="w-16 h-16 bg-[#128C7E] hover:bg-[#0e6b5e] text-white rounded-full flex items-center justify-center transition duration-200 transform hover:scale-105"
+              className="w-16 h-16 bg-[#128C7E] hover:bg-[#0e6b5e] text-white rounded-full flex items-center justify-center transition duration-200 transform hover:scale-105 shadow-lg"
               aria-label="Accept video call"
             >
               <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" viewBox="0 0 20 20" fill="currentColor">
@@ -202,7 +222,7 @@ export default function IncomingCall({ invitation, userId, onAccept, onReject, o
             /* Accept Audio Button */
             <button
               onClick={() => handleAccept(false)}
-              className="w-16 h-16 bg-[#25D366] hover:bg-[#1faa52] text-white rounded-full flex items-center justify-center transition duration-200 transform hover:scale-105"
+              className="w-16 h-16 bg-[#25D366] hover:bg-[#1faa52] text-white rounded-full flex items-center justify-center transition duration-200 transform hover:scale-105 shadow-lg"
               aria-label="Accept audio call"
             >
               <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" viewBox="0 0 20 20" fill="currentColor">
@@ -228,7 +248,7 @@ export default function IncomingCall({ invitation, userId, onAccept, onReject, o
           )}
         </div>
 
-        {/* Swipe instruction */}
+        {/* Instruction */}
         <div className="text-center mt-8 text-gray-400 text-sm">
           Tap a button to respond
         </div>
@@ -238,7 +258,7 @@ export default function IncomingCall({ invitation, userId, onAccept, onReject, o
           <div className="mt-4 text-center">
             <button
               onClick={playRingtone}
-              className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-md transition duration-200"
+              className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-md transition duration-200 shadow"
             >
               Enable Ringtone
             </button>
