@@ -102,7 +102,7 @@ export function useAuth() {
       setUser(null);
 
       // Redirect to login
-      router.push('/login');
+      router.push('/');
     } catch (err: any) {
       setError(err.message || 'An error occurred during logout');
     } finally {

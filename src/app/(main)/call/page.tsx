@@ -239,15 +239,15 @@ export default function CallPage() {
       {inCall ? (
         <div className="grid grid-cols-1 gap-6">
           {/* Video Panel */}
-          <div className="bg-black rounded-lg overflow-hidden" style={{ height: '60vh' }}>
-            <VideoPanel
-              localStream={localStream}
-              remoteStream={remoteStream}
-              onToggleVideo={handleVideoToggle}
-              onSwitchCamera={handleCameraSwitch}
-              callStatus={callStatus}
-            />
-          </div>
+          {/*<div className="bg-black rounded-lg overflow-hidden" style={{ height: '60vh' }}>*/}
+          {/*  <VideoPanel*/}
+          {/*    localStream={localStream}*/}
+          {/*    remoteStream={remoteStream}*/}
+          {/*    onToggleVideo={handleVideoToggle}*/}
+          {/*    onSwitchCamera={handleCameraSwitch}*/}
+          {/*    callStatus={callStatus}*/}
+          {/*  />*/}
+          {/*</div>*/}
 
           {/* Call Controls */}
           <div className="bg-white p-4 rounded-lg shadow-md">

@@ -84,13 +84,6 @@ export default function Navbar({ isOpen, toggleSidebar }: NavbarProps) {
             <div className="h-10 w-10 rounded-full bg-[#128C7E] flex items-center justify-center text-white mr-3">
               {user.username ? user.username.charAt(0).toUpperCase() : 'U'}
             </div>
-            <button
-              onClick={handleLogout}
-              className="bg-[#128C7E] text-white px-3 py-1 rounded text-sm font-medium hover:bg-[#0c6b5f] transition-colors"
-              aria-label="Logout"
-            >
-              Logout
-            </button>
           </div>
         )}
       </div>

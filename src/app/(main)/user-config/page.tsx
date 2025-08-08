@@ -17,6 +17,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/hooks/useAuth';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 
 interface UserConfig {
   id?: string;
@@ -31,10 +32,12 @@ interface UserConfig {
 
 export default function UserConfigPage() {
   const { user } = useAuth();
+  const searchParams = useSearchParams();
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [alertMessage, setAlertMessage] = useState<string | null>(null);
   
   // Form state
   const [config, setConfig] = useState<UserConfig>({
@@ -52,6 +55,16 @@ export default function UserConfigPage() {
   const [password, setPassword] = useState('');
   const [domain, setDomain] = useState('jsmwebrtc.my.id'); // Default domain
   const [wsServer, setWsServer] = useState('wss://jsmwebrtc.my.id:443/ws'); // Default WebSocket server URL
+
+  // Check for alert message in URL
+  // This handles alert messages passed from other components via URL query parameters
+  // For example, when a user tries to make a call without completing their SIP registration
+  useEffect(() => {
+    const alert = searchParams.get('alert');
+    if (alert) {
+      setAlertMessage(alert);
+    }
+  }, [searchParams]);
 
   // Fetch user config on load
   useEffect(() => {
@@ -242,6 +255,21 @@ export default function UserConfigPage() {
           <div className="bg-[#128C7E] text-white p-4">
             <h2 className="text-xl font-semibold">User Configuration</h2>
           </div>
+          
+          {alertMessage && (
+            <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-800 p-4 mb-4">
+              <div className="flex">
+                <div className="flex-shrink-0">
+                  <svg className="h-5 w-5 text-yellow-500" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                  </svg>
+                </div>
+                <div className="ml-3">
+                  <p className="text-sm font-medium">{alertMessage}</p>
+                </div>
+              </div>
+            </div>
+          )}
           
           {error && (
             <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4">
