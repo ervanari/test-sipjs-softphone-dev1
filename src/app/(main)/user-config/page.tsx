@@ -18,6 +18,9 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/hooks/useAuth';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
+import { testSIPConnection } from '@/lib/sipClient';
+import SIPConnectionStatus from '@/components/SIPConnectionStatus';
+import { useSIP } from '@/components/SIPProvider';
 
 interface UserConfig {
   id?: string;
@@ -33,11 +36,18 @@ interface UserConfig {
 export default function UserConfigPage() {
   const { user } = useAuth();
   const searchParams = useSearchParams();
+  const { updateConnectionStatus } = useSIP();
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isTesting, setIsTesting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [alertMessage, setAlertMessage] = useState<string | null>(null);
+  const [connectionStatus, setConnectionStatus] = useState<{
+    isConnected: boolean;
+    username: string;
+    domain: string;
+  } | null>(null);
   
   // Form state
   const [config, setConfig] = useState<UserConfig>({
@@ -53,8 +63,8 @@ export default function UserConfigPage() {
   // SIPRegistration-style form state for better UX
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [domain, setDomain] = useState('jsmwebrtc.my.id'); // Default domain
-  const [wsServer, setWsServer] = useState('wss://jsmwebrtc.my.id:443/ws'); // Default WebSocket server URL
+  const [domain, setDomain] = useState('test-webrtc.synergix.co.id'); // Default domain
+  const [wsServer, setWsServer] = useState('wss://test-webrtc.synergix.co.id:8089/ws'); // Default WebSocket server URL
 
   // Check for alert message in URL
   // This handles alert messages passed from other components via URL query parameters
@@ -120,9 +130,12 @@ export default function UserConfigPage() {
     
     if (!user) return;
     
-    setIsSaving(true);
+    // Reset states
+    setIsSaving(false);
+    setIsTesting(true);
     setError(null);
     setSuccessMessage(null);
+    setConnectionStatus(null);
     
     try {
       // Clean and validate the WebSocket server URL
@@ -202,6 +215,64 @@ export default function UserConfigPage() {
         useWebSocket: useWs
       };
       
+      // First, test the connection with the provided credentials
+      console.log('Testing SIP connection...');
+      
+      // Construct the SIP URI and WebSocket URL for testing
+      const sipUri = `sip:${username}@${domain}`;
+      let wsServerUrl = cleanWsServer;
+      
+      // Ensure WebSocket URL has the correct format
+      if (useWs) {
+        if (!wsServerUrl.startsWith('wss://') && !wsServerUrl.startsWith('ws://')) {
+          wsServerUrl = `wss://${wsServerUrl}`;
+        }
+        
+        // Add port if not included in the URL
+        if (!wsServerUrl.includes(':')) {
+          wsServerUrl = `${wsServerUrl}:${serverPort}`;
+        }
+        
+        // Add /ws path if not included
+        if (!wsServerUrl.includes('/ws')) {
+          wsServerUrl = `${wsServerUrl}/ws`;
+        }
+      }
+      
+      // Test the connection
+      await testSIPConnection({
+        uri: sipUri,
+        password: password,
+        wsServer: wsServerUrl,
+        onInvite: () => {}, // Empty handler for testing
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+          { urls: 'stun:stun2.l.google.com:19302' }
+        ]
+      });
+      
+      // If we get here, the connection was successful
+      console.log('SIP connection test successful');
+      
+      // Update connection status in local state
+      setConnectionStatus({
+        isConnected: true,
+        username: username,
+        domain: domain
+      });
+      
+      // Update connection status in SIPProvider to reflect changes immediately
+      updateConnectionStatus({
+        isRegistered: true,
+        username: username,
+        domain: domain
+      });
+      
+      // Now save the configuration to the database
+      setIsTesting(false);
+      setIsSaving(true);
+      
       const response = await fetch('/api/user-config', {
         method: 'POST',
         headers: {
@@ -218,14 +289,32 @@ export default function UserConfigPage() {
       // Update the config state with the saved values
       setConfig(configToSave);
       
-      setSuccessMessage('Configuration saved successfully!');
+      setSuccessMessage('Connection successful! Configuration saved.');
+      
+      // Store connection info in localStorage for persistence
+      localStorage.setItem('sipData', JSON.stringify({
+        username: username,
+        password: password,
+        wsServer: wsServerUrl,
+        domain: domain
+      }));
       
       // Success message will remain visible until user navigates away
       // This gives users enough time to see and click the "Go to Call Page" button
     } catch (err: any) {
-      console.error('Error saving config:', err);
-      setError(err.message || 'An error occurred while saving your configuration');
+      console.error('Error:', err);
+      
+      // Check if it's a connection error or a saving error
+      if (isTesting) {
+        setError('Failed to connect to SIP server. Please check your credentials and try again.');
+      } else {
+        setError(err.message || 'An error occurred while saving your configuration');
+      }
+      
+      // Reset connection status
+      setConnectionStatus(null);
     } finally {
+      setIsTesting(false);
       setIsSaving(false);
     }
   };
@@ -293,6 +382,18 @@ export default function UserConfigPage() {
                 <Link href="/call" className="bg-green-600 text-white py-2 px-4 rounded font-medium hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-50">
                   Go to Call Page
                 </Link>
+              </div>
+            </div>
+          )}
+          
+          {/* Connection Status */}
+          {connectionStatus && connectionStatus.isConnected && (
+            <div className="bg-green-50 border-l-4 border-green-500 text-green-700 p-4 mt-4">
+              <div className="flex items-center">
+                <span className="inline-block w-3 h-3 rounded-full bg-green-500 mr-2"></span>
+                <span>
+                  Connected as <strong>{connectionStatus.username}@{connectionStatus.domain}</strong>
+                </span>
               </div>
             </div>
           )}
@@ -380,16 +481,24 @@ export default function UserConfigPage() {
               {/* Submit Button */}
               <button
                 type="submit"
-                disabled={isSaving || !username || !password || !wsServer || !domain}
+                disabled={isSaving || isTesting || !username || !password || !wsServer || !domain}
                 className="w-full bg-[#128C7E] hover:bg-[#0e6b5e] text-white font-bold py-3 px-4 rounded-md disabled:opacity-50 transition duration-200"
               >
-                {isSaving ? (
+                {isTesting ? (
                   <div className="flex items-center justify-center">
                     <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
-                    Saving...
+                    Testing Connection...
+                  </div>
+                ) : isSaving ? (
+                  <div className="flex items-center justify-center">
+                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Saving Configuration...
                   </div>
                 ) : (
                   "Save Configuration"

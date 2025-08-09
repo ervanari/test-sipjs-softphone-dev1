@@ -2,6 +2,7 @@
 
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/hooks/useAuth';
+import SIPConnectionStatus from './SIPConnectionStatus';
 
 interface NavbarProps {
   isOpen: boolean;
@@ -74,12 +75,12 @@ export default function Navbar({ isOpen, toggleSidebar }: NavbarProps) {
           </h1>
         </div>
         
-        {/* Right side - User info and logout */}
+        {/* Right side - User info, SIP status, and logout */}
         {user && (
           <div className="flex items-center">
             <div className="mr-3 text-right hidden sm:block">
               <p className="text-sm font-medium text-gray-700">{user.username}</p>
-              <p className="text-xs text-gray-500">Logged in</p>
+              <SIPConnectionStatus />
             </div>
             <div className="h-10 w-10 rounded-full bg-[#128C7E] flex items-center justify-center text-white mr-3">
               {user.username ? user.username.charAt(0).toUpperCase() : 'U'}

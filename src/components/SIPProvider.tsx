@@ -12,6 +12,7 @@ interface SIPContextType {
   isRegistered: boolean;
   domain: string;
   username: string;
+  updateConnectionStatus: (status: { isRegistered: boolean; username: string; domain: string }) => void;
 }
 
 // Create the context with a default value
@@ -19,6 +20,7 @@ const SIPContext = createContext<SIPContextType>({
   isRegistered: false,
   domain: '',
   username: '',
+  updateConnectionStatus: () => {}, // No-op implementation
 });
 
 // Hook to use the SIP context
@@ -140,7 +142,6 @@ export default function SIPProvider({ children }: SIPProviderProps) {
         // If no valid saved data, fetch from API
         if (!sipConfig) {
           const response = await fetch(`/api/user-config?userId=${user.id}`);
-          
           if (!response.ok) {
             console.log('No SIP configuration found for user');
             setIsLoading(false);
@@ -148,6 +149,8 @@ export default function SIPProvider({ children }: SIPProviderProps) {
           }
           
           const result = await response.json();
+          console.log("response", result);
+          
           if (!result.data) {
             console.log('No SIP configuration data found');
             setIsLoading(false);
@@ -218,7 +221,7 @@ export default function SIPProvider({ children }: SIPProviderProps) {
         setIsRegistered(true);
         setDomain(sipConfig.domain);
         setUsername(sipConfig.username);
-        console.log('SIP registration successful');
+        console.log('SIP registration successful', {domain: sipConfig.domain, username: sipConfig.username});
       } catch (error) {
         console.error('Error registering SIP:', error);
       } finally {
@@ -236,14 +239,39 @@ export default function SIPProvider({ children }: SIPProviderProps) {
         });
       }
     };
-  }, [user]);
+  }, [user, isRegistered, setUserAgent, setCurrentSession, setIsIncomingCall, setCallState]);
+
+  console.log('SIPProvider rendered with state:', {
+    isRegistered,
+    domain,
+    username,
+    incomingCall,
+    isLoading
+  });
+  
+  // Function to update connection status from outside components
+  const updateConnectionStatus = (status: { isRegistered: boolean; username: string; domain: string }) => {
+    console.log('Updating SIP connection status:', status);
+    setIsRegistered(status.isRegistered);
+    setUsername(status.username);
+    setDomain(status.domain);
+  };
 
   // Provide the SIP context value
   const contextValue: SIPContextType = {
     isRegistered,
     domain,
     username,
+    updateConnectionStatus,
   };
+
+  // Expose the context to window for testing purposes
+  // This should be removed in production
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      (window as any).__sipContext = contextValue;
+    }
+  }, [contextValue]);
 
   return (
     <SIPContext.Provider value={contextValue}>

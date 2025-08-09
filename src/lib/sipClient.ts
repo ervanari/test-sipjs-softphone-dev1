@@ -1240,6 +1240,41 @@ export async function switchCamera() {
     return false;
 }
 
+/**
+ * Test SIP connection with provided credentials
+ * This function attempts to connect to the SIP server but doesn't persist the connection
+ * It's used to validate credentials before saving them to the database
+ */
+export function testSIPConnection(config: SIPConfig): Promise<void> {
+    return new Promise(async (resolve, reject) => {
+        try {
+            // Initialize SIP with the provided configuration
+            await initSIP(config);
+            
+            // If we get here, the connection was successful
+            console.log("✅ SIP connection test successful");
+            
+            // Unregister immediately to avoid keeping multiple connections open
+            await unregisterSIP();
+            
+            // Resolve the promise to indicate success
+            resolve();
+        } catch (error) {
+            console.error("❌ SIP connection test failed:", error);
+            
+            // Try to clean up if possible
+            try {
+                await unregisterSIP();
+            } catch (cleanupError) {
+                console.error("Error cleaning up after failed connection test:", cleanupError);
+            }
+            
+            // Reject the promise to indicate failure
+            reject(error);
+        }
+    });
+}
+
 export function unregisterSIP(): Promise<void> {
     return new Promise((resolve, reject) => {
         try {
