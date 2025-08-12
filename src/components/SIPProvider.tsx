@@ -231,12 +231,23 @@ export default function SIPProvider({ children }: SIPProviderProps) {
     
     loadAndRegisterSIP();
     
-    // Cleanup on unmount
+    // Cleanup on unmount - but don't unregister if we have a valid configuration
+    // This prevents the "SIP User Agent stopped" message from appearing after registration
     return () => {
-      if (isRegistered) {
+      // Check if we're in a page navigation or component re-render
+      // If localStorage has sipData, we want to keep the SIP client registered
+      const hasSavedSipData = typeof window !== 'undefined' &&
+                             window.localStorage &&
+                             localStorage.getItem('sipData');
+    
+      // Only unregister if we don't have saved SIP data
+      if (isRegistered && !hasSavedSipData) {
+        console.log('SIPProvider unmounting - unregistering SIP client');
         unregisterSIP().catch(error => {
           console.error('Error unregistering SIP:', error);
         });
+      } else if (isRegistered && hasSavedSipData) {
+        console.log('SIPProvider unmounting - keeping SIP client registered due to saved configuration');
       }
     };
   }, [user, isRegistered, setUserAgent, setCurrentSession, setIsIncomingCall, setCallState]);

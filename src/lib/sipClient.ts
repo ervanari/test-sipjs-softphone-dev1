@@ -13,6 +13,171 @@ export let ua: UserAgent;
 export let registerer: Registerer;
 export let currentSession: Session;
 let isOnHold: boolean = false;
+// Store the last successfully registered URI for fallback
+let lastRegisteredURI: string | null = null;
+
+// Store the last SIP configuration
+interface StoredSipConfig {
+    uri: string;
+    password: string;
+    wsServer: string;
+    iceServers?: RTCIceServer[];
+}
+
+/**
+ * Save SIP configuration to localStorage
+ * @param config The SIP configuration to save
+ */
+export function saveSipConfig(config: StoredSipConfig): void {
+    if (typeof window !== 'undefined' && window.localStorage) {
+        try {
+            localStorage.setItem('sipConfig', JSON.stringify(config));
+            console.log("✅ SIP configuration saved to localStorage");
+        } catch (error) {
+            console.error("❌ Error saving SIP configuration to localStorage:", error);
+        }
+    }
+}
+
+/**
+ * Load SIP configuration from localStorage
+ * @returns The stored SIP configuration or null if not found
+ */
+export function loadSipConfig(): StoredSipConfig | null {
+    if (typeof window !== 'undefined' && window.localStorage) {
+        try {
+            // First try to load from 'sipConfig'
+            const configStr = localStorage.getItem('sipConfig');
+            if (configStr) {
+                return JSON.parse(configStr) as StoredSipConfig;
+            }
+            
+            // If not found, try to load from 'sipData' (used by SIPRegistration component)
+            const sipDataStr = localStorage.getItem('sipData');
+            if (sipDataStr) {
+                const sipData = JSON.parse(sipDataStr);
+                // Convert sipData format to StoredSipConfig format
+                if (sipData.username && sipData.password && sipData.wsServer && sipData.domain) {
+                    console.log("✅ Found SIP configuration in 'sipData'");
+                    const uri = `sip:${sipData.username}@${sipData.domain}`;
+                    // Create a StoredSipConfig object from sipData
+                    const config: StoredSipConfig = {
+                        uri,
+                        password: sipData.password,
+                        wsServer: sipData.wsServer,
+                        iceServers: [
+                            { urls: 'stun:stun.l.google.com:19302' },
+                            { urls: 'stun:stun1.l.google.com:19302' },
+                            { urls: 'stun:stun2.l.google.com:19302' }
+                        ]
+                    };
+                    // Save in the expected format for future use
+                    saveSipConfig(config);
+                    return config;
+                }
+            }
+        } catch (error) {
+            console.error("❌ Error loading SIP configuration from localStorage:", error);
+        }
+    }
+    return null;
+}
+
+/**
+ * Initialize UserAgent from configuration
+ * @param config The SIP configuration to use
+ * @returns A promise that resolves when the UserAgent is initialized and registered
+ */
+export async function initUserAgentFromConfig(config: StoredSipConfig): Promise<boolean> {
+    try {
+        // Save the configuration for future use
+        saveSipConfig(config);
+        
+        // Initialize SIP with the provided configuration
+        await initSIP({
+            uri: config.uri,
+            password: config.password,
+            wsServer: config.wsServer,
+            iceServers: config.iceServers,
+            onInvite: (invitation) => {
+                // Handle incoming invites
+                currentSession = invitation;
+                
+                // Dispatch a custom event for the frontend
+                if (typeof window !== 'undefined') {
+                    const inviteEvent = new CustomEvent('sip:incoming-invite', {
+                        detail: {
+                            session: invitation,
+                            from: invitation.request.from.uri.toString(),
+                            callId: invitation.request.callId
+                        }
+                    });
+                    window.dispatchEvent(inviteEvent);
+                    console.log("✅ Dispatched sip:incoming-invite event to frontend");
+                }
+            }
+        });
+        
+        return true;
+    } catch (error) {
+        console.error("❌ Error initializing UserAgent from config:", error);
+        return false;
+    }
+}
+
+/**
+ * Ensure UserAgent is initialized and ready
+ * @returns A promise that resolves when the UserAgent is ready
+ */
+export async function ensureUaReady(): Promise<boolean> {
+    // Check if UserAgent is already initialized and registered
+    if (ua && registerer && registerer.state === 'Registered') {
+        return true;
+    }
+    
+    // Try to initialize from saved configuration
+    const config = loadSipConfig();
+    if (config) {
+        return await initUserAgentFromConfig(config);
+    }
+    
+    console.error("❌ No saved SIP configuration found");
+    return false;
+}
+
+// Helper function to get domain from URI or use fallback
+function getDomainFromRegisteredURI(): string {
+    // Try to get from current UA if available
+    if (ua && ua.configuration && ua.configuration.uri) {
+        const uriString = ua.configuration.uri.toString();
+        const domain = uriString.split('@')[1]?.split(';')[0];
+        if (domain) {
+            return domain;
+        }
+    }
+    
+    // Try to use last registered URI from memory
+    if (lastRegisteredURI) {
+        const domain = lastRegisteredURI.split('@')[1]?.split(';')[0];
+        if (domain) {
+            return domain;
+        }
+    }
+    
+    // Try to get from localStorage if available
+    if (typeof window !== 'undefined' && window.localStorage) {
+        const storedURI = localStorage.getItem('lastRegisteredSIPURI');
+        if (storedURI) {
+            const domain = storedURI.split('@')[1]?.split(';')[0];
+            if (domain) {
+                return domain;
+            }
+        }
+    }
+    
+    // Default fallback domain
+    return 'jsmwebrtc.my.id';
+}
 
 interface SIPConfig {
     uri: string;
@@ -122,6 +287,16 @@ export function initSIP(config: SIPConfig): Promise<void> {
                     switch (state) {
                         case "Registered":
                             console.log("✅ SIP connected and registered");
+                            // Store the registered URI for fallback
+                            if (ua && ua.configuration && ua.configuration.uri) {
+                                const uriString = ua.configuration.uri.toString();
+                                lastRegisteredURI = uriString;
+                                // Store in localStorage if available
+                                if (typeof window !== 'undefined' && window.localStorage) {
+                                    localStorage.setItem('lastRegisteredSIPURI', uriString);
+                                    console.log("✅ Stored registered URI for fallback:", uriString);
+                                }
+                            }
                             safeResolve();
                             break;
                         case "Unregistered":
@@ -215,11 +390,10 @@ export async function makeCall(target: string, withVideo = true, userId: string 
             formattedTarget = `sip:${formattedTarget}`;
         }
         
-        // If target doesn't have a domain, add the default domain
+        // If target doesn't have a domain, add the domain from registered URI or fallback
         if (!formattedTarget.includes('@')) {
-            // Extract domain from the registered URI
-            const registeredURI = ua.configuration.uri?.toString() || '';
-            const domain = registeredURI.split('@')[1]?.split(';')[0] || 'jsmwebrtc.my.id';
+            // Get domain using the helper function (with fallback mechanisms)
+            const domain = getDomainFromRegisteredURI();
             formattedTarget = `${formattedTarget}@${domain}`;
         }
         
@@ -235,6 +409,20 @@ export async function makeCall(target: string, withVideo = true, userId: string 
         } catch (error) {
             console.error("Error creating target URI for call:", error);
             throw new Error(`Invalid target URI: ${formattedTarget}. Please use format: username@domain or sip:username@domain`);
+        }
+        
+        // Ensure UserAgent is initialized and ready before creating Inviter
+        if (!ua) {
+            console.log("UserAgent not initialized, attempting to initialize from saved config...");
+            const isReady = await ensureUaReady();
+            if (!isReady) {
+                throw new Error("Failed to initialize UserAgent. Please register first.");
+            }
+        }
+        
+        // Check again after initialization attempt
+        if (!ua) {
+            throw new Error("UserAgent initialization failed. Please register first.");
         }
         
         const inviter = new Inviter(ua, targetURI, {
@@ -769,13 +957,24 @@ export function muteCall(mute: boolean) {
 }
 
 export function sendMessage(target: string, message: string): Promise<void> {
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
         try {
             console.log(`Sending message to ${target}: ${message}`);
             
             // Check if UA is initialized
             if (!ua) {
-                const error = new Error("SIP User Agent not initialized. Please register first.");
+                console.log("UserAgent not initialized, attempting to initialize from saved config...");
+                const isReady = await ensureUaReady();
+                if (!isReady) {
+                    const error = new Error("Failed to initialize UserAgent. Please register first.");
+                    console.error(error);
+                    return reject(error);
+                }
+            }
+            
+            // Check again after initialization attempt
+            if (!ua) {
+                const error = new Error("UserAgent initialization failed. Please register first.");
                 console.error(error);
                 return reject(error);
             }
@@ -788,11 +987,10 @@ export function sendMessage(target: string, message: string): Promise<void> {
                 formattedTarget = `sip:${formattedTarget}`;
             }
             
-            // If target doesn't have a domain, add the default domain
+            // If target doesn't have a domain, add the domain from registered URI or fallback
             if (!formattedTarget.includes('@')) {
-                // Extract domain from the registered URI
-                const registeredURI = ua.configuration.uri?.toString() || '';
-                const domain = registeredURI.split('@')[1]?.split(';')[0] || 'jsmwebrtc.my.id';
+                // Get domain using the helper function (with fallback mechanisms)
+                const domain = getDomainFromRegisteredURI();
                 formattedTarget = `${formattedTarget}@${domain}`;
             }
             
@@ -837,10 +1035,26 @@ export function sendMessage(target: string, message: string): Promise<void> {
     });
 }
 
-export function transferCall(target: string) {
+export async function transferCall(target: string) {
     if (!currentSession) return false;
     
     try {
+        // Ensure UserAgent is initialized and ready before transferring call
+        if (!ua) {
+            console.log("UserAgent not initialized, attempting to initialize from saved config...");
+            const isReady = await ensureUaReady();
+            if (!isReady) {
+                console.error("Failed to initialize UserAgent. Please register first.");
+                return false;
+            }
+        }
+        
+        // Check again after initialization attempt
+        if (!ua) {
+            console.error("UserAgent initialization failed. Please register first.");
+            return false;
+        }
+        
         if (currentSession instanceof Inviter) {
             // Ensure target has the correct format
             let formattedTarget = target;
@@ -850,11 +1064,10 @@ export function transferCall(target: string) {
                 formattedTarget = `sip:${formattedTarget}`;
             }
             
-            // If target doesn't have a domain, add the default domain
+            // If target doesn't have a domain, add the domain from registered URI or fallback
             if (!formattedTarget.includes('@')) {
-                // Extract domain from the registered URI
-                const registeredURI = ua.configuration.uri?.toString() || '';
-                const domain = registeredURI.split('@')[1]?.split(';')[0] || 'jsmwebrtc.my.id';
+                // Get domain using the helper function (with fallback mechanisms)
+                const domain = getDomainFromRegisteredURI();
                 formattedTarget = `${formattedTarget}@${domain}`;
             }
             
