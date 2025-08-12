@@ -333,6 +333,46 @@ export function initSIP(config: SIPConfig): Promise<void> {
     });
 }
 
+// Create or get the remote audio element for playback
+let remoteAudio: HTMLAudioElement;
+const getRemoteAudioElement = (): HTMLAudioElement => {
+    // Check if we already have an audio element
+    let audio = document.getElementById('remote-audio') as HTMLAudioElement;
+    if (!audio) {
+        // Create a new audio element if one doesn't exist
+        audio = document.createElement('audio');
+        audio.id = 'remote-audio';
+        audio.autoplay = true;
+        audio.playsInline = true;
+        // Add controls for debugging purposes
+        audio.controls = true;
+        // Hide the element but keep it functional
+        audio.style.position = 'absolute';
+        audio.style.top = '-1px';
+        audio.style.left = '-1px';
+        audio.style.width = '1px';
+        audio.style.height = '1px';
+        document.body.appendChild(audio);
+        console.log('✅ Created remote audio element for playback');
+    }
+    return audio;
+};
+
+// STUN/TURN servers configuration for ICE candidates
+const iceServers = [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun3.l.google.com:19302' },
+    { urls: 'stun:stun4.l.google.com:19302' },
+    // Add your TURN servers here if available
+    // {
+    //   urls: 'turn:your-turn-server.com:3478',
+    //   username: 'username',
+    //   credential: 'credential'
+    // }
+];
+
 export async function makeCall(target: string, withVideo = true, userId: string | undefined): Promise<Session> {
     try {
         console.log(`Requesting media permissions: audio=true, video=${withVideo}`);
@@ -425,12 +465,18 @@ export async function makeCall(target: string, withVideo = true, userId: string 
             throw new Error("UserAgent initialization failed. Please register first.");
         }
         
+        // Get or create the remote audio element
+        remoteAudio = getRemoteAudioElement();
+        
         const inviter = new Inviter(ua, targetURI, {
             sessionDescriptionHandlerOptions: {
                 constraints: {
                     audio: true,
                     video: withVideo,
                 },
+                // Add ICE servers configuration
+                iceGatheringTimeout: 5000,
+                iceServers: iceServers
             },
         });
         
@@ -503,6 +549,72 @@ export async function makeCall(target: string, withVideo = true, userId: string 
                     console.log(`🔍 RTCPeerConnection state: ${pc.connectionState}`);
                     console.log(`🔍 ICE connection state: ${pc.iceConnectionState}`);
                     console.log(`🔍 Signaling state: ${pc.signalingState}`);
+                    
+                    // Set up event listeners for ICE connection state changes
+                    pc.oniceconnectionstatechange = () => {
+                        console.log(`🧊 ICE connection state changed to: ${pc.iceConnectionState}`);
+                        if (pc.iceConnectionState === 'failed') {
+                            console.error('❌ ICE connection failed - this may indicate a NAT traversal issue');
+                            console.log('💡 Tip: Check that STUN/TURN servers are correctly configured and accessible');
+                        } else if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+                            console.log('✅ ICE connection established successfully');
+                        }
+                    };
+                    
+                    // Set up event listener for connection state changes
+                    pc.onconnectionstatechange = () => {
+                        console.log(`🔌 Connection state changed to: ${pc.connectionState}`);
+                        if (pc.connectionState === 'failed') {
+                            console.error('❌ Connection failed');
+                        } else if (pc.connectionState === 'connected') {
+                            console.log('✅ Connection established successfully');
+                        }
+                    };
+                    
+                    // Set up event listener for track events to handle remote audio
+                    pc.ontrack = (event: RTCTrackEvent) => {
+                        console.log(`🎵 Remote track received: kind=${event.track.kind}, enabled=${event.track.enabled}, readyState=${event.track.readyState}`);
+                        
+                        if (event.track.kind === 'audio') {
+                            // Get the remote audio element
+                            const audioElement = getRemoteAudioElement();
+                            
+                            // Create a new MediaStream with the received track
+                            const remoteStream = new MediaStream([event.track]);
+                            
+                            // Attach the stream to the audio element
+                            audioElement.srcObject = remoteStream;
+                            
+                            // Try to play the audio (this might be blocked by browser autoplay policies)
+                            audioElement.play()
+                                .then(() => {
+                                    console.log('✅ Remote audio playback started successfully');
+                                })
+                                .catch(error => {
+                                    console.error('❌ Remote audio playback failed:', error);
+                                    console.log('💡 Tip: This might be due to browser autoplay policies. Try adding a user interaction before playing audio.');
+                                    
+                                    // Add a one-time click handler to the document to enable audio on user interaction
+                                    const enableAudio = () => {
+                                        audioElement.play()
+                                            .then(() => {
+                                                console.log('✅ Remote audio playback started after user interaction');
+                                            })
+                                            .catch(e => {
+                                                console.error('❌ Remote audio playback still failed after user interaction:', e);
+                                            });
+                                        document.removeEventListener('click', enableAudio);
+                                    };
+                                    document.addEventListener('click', enableAudio);
+                                    console.log('💡 Added click handler to enable audio on user interaction');
+                                });
+                            
+                            // Set up event listeners for the track
+                            event.track.onmute = () => console.log('🔇 Remote audio track muted');
+                            event.track.onunmute = () => console.log('🔊 Remote audio track unmuted');
+                            event.track.onended = () => console.log('🛑 Remote audio track ended');
+                        }
+                    };
                     
                     // Check if we already have senders with tracks
                     const existingSenders = pc.getSenders();
@@ -742,6 +854,9 @@ export async function acceptCall(invitation: Invitation, withVideo = true, userI
             video: withVideo
         });
         
+        // Get or create the remote audio element
+        remoteAudio = getRemoteAudioElement();
+        
         // Add state change listener to debug audio issues
         invitation.stateChange.addListener((state) => {
             console.log(`Incoming call state changed to: ${state}`);
@@ -817,13 +932,16 @@ export async function acceptCall(invitation: Invitation, withVideo = true, userI
             }
         });
         
-        // Accept the invitation with the requested media constraints
+        // Accept the invitation with the requested media constraints and ICE servers
         await invitation.accept({
             sessionDescriptionHandlerOptions: {
                 constraints: {
                     audio: true,
                     video: withVideo,
                 },
+                // Add ICE servers configuration
+                iceGatheringTimeout: 5000,
+                iceServers: iceServers
             },
         });
         
@@ -836,6 +954,79 @@ export async function acceptCall(invitation: Invitation, withVideo = true, userI
                 const sessionDescriptionHandler = session.sessionDescriptionHandler as any;
                 if (sessionDescriptionHandler.peerConnection) {
                     const pc = sessionDescriptionHandler.peerConnection;
+                    
+                    console.log('🔍 Checking RTCPeerConnection for existing tracks (incoming call)...');
+                    
+                    // Log the current state of the peer connection
+                    console.log(`🔍 RTCPeerConnection state: ${pc.connectionState}`);
+                    console.log(`🔍 ICE connection state: ${pc.iceConnectionState}`);
+                    console.log(`🔍 Signaling state: ${pc.signalingState}`);
+                    
+                    // Set up event listeners for ICE connection state changes
+                    pc.oniceconnectionstatechange = () => {
+                        console.log(`🧊 ICE connection state changed to: ${pc.iceConnectionState} (incoming call)`);
+                        if (pc.iceConnectionState === 'failed') {
+                            console.error('❌ ICE connection failed - this may indicate a NAT traversal issue');
+                            console.log('💡 Tip: Check that STUN/TURN servers are correctly configured and accessible');
+                        } else if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+                            console.log('✅ ICE connection established successfully (incoming call)');
+                        }
+                    };
+                    
+                    // Set up event listener for connection state changes
+                    pc.onconnectionstatechange = () => {
+                        console.log(`🔌 Connection state changed to: ${pc.connectionState} (incoming call)`);
+                        if (pc.connectionState === 'failed') {
+                            console.error('❌ Connection failed (incoming call)');
+                        } else if (pc.connectionState === 'connected') {
+                            console.log('✅ Connection established successfully (incoming call)');
+                        }
+                    };
+                    
+                    // Set up event listener for track events to handle remote audio
+                    pc.ontrack = (event: RTCTrackEvent) => {
+                        console.log(`🎵 Remote track received (incoming call): kind=${event.track.kind}, enabled=${event.track.enabled}, readyState=${event.track.readyState}`);
+                        
+                        if (event.track.kind === 'audio') {
+                            // Get the remote audio element
+                            const audioElement = getRemoteAudioElement();
+                            
+                            // Create a new MediaStream with the received track
+                            const remoteStream = new MediaStream([event.track]);
+                            
+                            // Attach the stream to the audio element
+                            audioElement.srcObject = remoteStream;
+                            
+                            // Try to play the audio (this might be blocked by browser autoplay policies)
+                            audioElement.play()
+                                .then(() => {
+                                    console.log('✅ Remote audio playback started successfully (incoming call)');
+                                })
+                                .catch(error => {
+                                    console.error('❌ Remote audio playback failed (incoming call):', error);
+                                    console.log('💡 Tip: This might be due to browser autoplay policies. Try adding a user interaction before playing audio.');
+                                    
+                                    // Add a one-time click handler to the document to enable audio on user interaction
+                                    const enableAudio = () => {
+                                        audioElement.play()
+                                            .then(() => {
+                                                console.log('✅ Remote audio playback started after user interaction (incoming call)');
+                                            })
+                                            .catch(e => {
+                                                console.error('❌ Remote audio playback still failed after user interaction (incoming call):', e);
+                                            });
+                                        document.removeEventListener('click', enableAudio);
+                                    };
+                                    document.addEventListener('click', enableAudio);
+                                    console.log('💡 Added click handler to enable audio on user interaction (incoming call)');
+                                });
+                            
+                            // Set up event listeners for the track
+                            event.track.onmute = () => console.log('🔇 Remote audio track muted (incoming call)');
+                            event.track.onunmute = () => console.log('🔊 Remote audio track unmuted (incoming call)');
+                            event.track.onended = () => console.log('🛑 Remote audio track ended (incoming call)');
+                        }
+                    };
                     
                     // Check if we already have senders with tracks
                     const existingSenders = pc.getSenders();
@@ -1143,6 +1334,341 @@ export function getCallState() {
 
 export function isCallOnHold() {
     return isOnHold;
+}
+
+// Function to test microphone and verify it's working
+export async function testMicrophone(): Promise<{ success: boolean; message: string; audioLevel?: number }> {
+    try {
+        console.log('🎤 Testing microphone...');
+        
+        // Request microphone access
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const audioTracks = stream.getAudioTracks();
+        
+        if (audioTracks.length === 0) {
+            return {
+                success: false,
+                message: 'No audio tracks found. Your microphone might not be working or is not accessible.'
+            };
+        }
+        
+        console.log(`🎤 Got ${audioTracks.length} audio tracks from getUserMedia`);
+        
+        // Create audio context to analyze audio levels
+        const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const source = audioContext.createMediaStreamSource(stream);
+        const analyser = audioContext.createAnalyser();
+        analyser.fftSize = 256;
+        source.connect(analyser);
+        const dataArray = new Uint8Array(analyser.frequencyBinCount);
+        
+        // Check audio levels
+        return new Promise((resolve) => {
+            let maxLevel = 0;
+            let checkCount = 0;
+            
+            const checkAudioLevel = () => {
+                analyser.getByteFrequencyData(dataArray);
+                let sum = 0;
+                for (let i = 0; i < dataArray.length; i++) {
+                    sum += dataArray[i];
+                }
+                const average = sum / dataArray.length;
+                console.log(`🎤 Audio level: ${average.toFixed(2)}`);
+                
+                if (average > maxLevel) {
+                    maxLevel = average;
+                }
+                
+                checkCount++;
+                if (checkCount < 10) {
+                    // Continue checking for about 2 seconds
+                    setTimeout(checkAudioLevel, 200);
+                } else {
+                    // Clean up
+                    stream.getTracks().forEach(track => track.stop());
+                    audioContext.close();
+                    
+                    // Determine result
+                    if (maxLevel > 10) {
+                        resolve({
+                            success: true,
+                            message: 'Microphone is working and detecting audio.',
+                            audioLevel: maxLevel
+                        });
+                    } else if (maxLevel > 0) {
+                        resolve({
+                            success: true,
+                            message: 'Microphone is working but audio level is low. Try speaking louder or check microphone settings.',
+                            audioLevel: maxLevel
+                        });
+                    } else {
+                        resolve({
+                            success: false,
+                            message: 'No audio detected. Your microphone might be muted or not working properly.',
+                            audioLevel: 0
+                        });
+                    }
+                }
+            };
+            
+            // Start checking audio levels
+            checkAudioLevel();
+            
+            // Prompt user to speak
+            console.log('🗣️ Please speak into your microphone to test audio levels...');
+        });
+    } catch (error) {
+        console.error('Error testing microphone:', error);
+        
+        // Provide more helpful error messages based on the error type
+        if (error instanceof DOMException) {
+            if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+                return {
+                    success: false,
+                    message: 'Microphone access denied. Please allow microphone access in your browser settings.'
+                };
+            } else if (error.name === 'NotFoundError') {
+                return {
+                    success: false,
+                    message: 'No microphone found. Please check your device connections.'
+                };
+            }
+        }
+        
+        return {
+            success: false,
+            message: `Error accessing microphone: ${error instanceof Error ? error.message : String(error)}`
+        };
+    }
+}
+
+// Function to analyze SDP and verify audio codecs
+export function analyzeSdp(): { success: boolean; message: string; details: any } {
+    if (!currentSession) {
+        return {
+            success: false,
+            message: 'No active session to analyze',
+            details: { error: 'No active session' }
+        };
+    }
+    
+    try {
+        const result: any = {
+            sessionState: currentSession.state,
+            audio: {
+                local: { direction: null, codecs: [] },
+                remote: { direction: null, codecs: [] }
+            },
+            ice: {
+                candidates: { local: 0, remote: 0 },
+                state: null
+            }
+        };
+        
+        // Get session description handler
+        if (currentSession.sessionDescriptionHandler) {
+            const sdh = currentSession.sessionDescriptionHandler as any;
+            
+            // Get peer connection
+            if (sdh.peerConnection) {
+                const pc = sdh.peerConnection;
+                
+                // Get ICE connection state
+                result.ice.state = pc.iceConnectionState;
+                
+                // Get local and remote descriptions
+                const localSdp = pc.localDescription?.sdp;
+                const remoteSdp = pc.remoteDescription?.sdp;
+                
+                // Analyze local SDP
+                if (localSdp) {
+                    console.log('Analyzing local SDP...');
+                    const localSdpLines = localSdp.split('\n');
+                    let currentMedia = '';
+                    let inAudioSection = false;
+                    
+                    localSdpLines.forEach((line: string) => {
+                        // Track which media section we're in
+                        if (line.startsWith('m=')) {
+                            currentMedia = line.split(' ')[0].substring(2);
+                            inAudioSection = currentMedia === 'audio';
+                            
+                            if (inAudioSection) {
+                                // Extract codec payload types from the m=audio line
+                                // Format: m=audio 9 UDP/TLS/RTP/SAVPF 111 103 104 9 0 8 106 105 13 110 112 113 126
+                                const payloadTypes = line.split(' ').slice(3);
+                                result.audio.local.payloadTypes = payloadTypes;
+                            }
+                        }
+                        
+                        // Check for direction attributes in audio section
+                        if (inAudioSection &&
+                            (line.includes('a=sendrecv') ||
+                             line.includes('a=sendonly') ||
+                             line.includes('a=recvonly') ||
+                             line.includes('a=inactive'))) {
+                            result.audio.local.direction = line.trim().substring(2); // Remove 'a='
+                        }
+                        
+                        // Extract codec information from rtpmap lines in audio section
+                        // Format: a=rtpmap:111 opus/48000/2
+                        if (inAudioSection && line.startsWith('a=rtpmap:')) {
+                            const parts = line.substring(9).split(' '); // Remove 'a=rtpmap:'
+                            const payloadType = parts[0];
+                            const codecInfo = parts[1].split('/');
+                            const codec = {
+                                payloadType,
+                                name: codecInfo[0],
+                                clockRate: codecInfo[1],
+                                channels: codecInfo[2] || '1'
+                            };
+                            result.audio.local.codecs.push(codec);
+                        }
+                        
+                        // Count ICE candidates
+                        if (line.startsWith('a=candidate:')) {
+                            result.ice.candidates.local++;
+                        }
+                    });
+                }
+                
+                // Analyze remote SDP
+                if (remoteSdp) {
+                    console.log('Analyzing remote SDP...');
+                    const remoteSdpLines = remoteSdp.split('\n');
+                    let currentMedia = '';
+                    let inAudioSection = false;
+                    
+                    remoteSdpLines.forEach((line: string) => {
+                        // Track which media section we're in
+                        if (line.startsWith('m=')) {
+                            currentMedia = line.split(' ')[0].substring(2);
+                            inAudioSection = currentMedia === 'audio';
+                            
+                            if (inAudioSection) {
+                                // Extract codec payload types from the m=audio line
+                                const payloadTypes = line.split(' ').slice(3);
+                                result.audio.remote.payloadTypes = payloadTypes;
+                            }
+                        }
+                        
+                        // Check for direction attributes in audio section
+                        if (inAudioSection &&
+                            (line.includes('a=sendrecv') ||
+                             line.includes('a=sendonly') ||
+                             line.includes('a=recvonly') ||
+                             line.includes('a=inactive'))) {
+                            result.audio.remote.direction = line.trim().substring(2); // Remove 'a='
+                        }
+                        
+                        // Extract codec information from rtpmap lines in audio section
+                        if (inAudioSection && line.startsWith('a=rtpmap:')) {
+                            const parts = line.substring(9).split(' '); // Remove 'a=rtpmap:'
+                            const payloadType = parts[0];
+                            const codecInfo = parts[1].split('/');
+                            const codec = {
+                                payloadType,
+                                name: codecInfo[0],
+                                clockRate: codecInfo[1],
+                                channels: codecInfo[2] || '1'
+                            };
+                            result.audio.remote.codecs.push(codec);
+                        }
+                        
+                        // Count ICE candidates
+                        if (line.startsWith('a=candidate:')) {
+                            result.ice.candidates.remote++;
+                        }
+                    });
+                }
+                
+                // Analyze the results to determine if audio should work
+                let audioShouldWork = true;
+                let message = 'Audio appears to be properly configured.';
+                const issues = [];
+                
+                // Check audio directions
+                if (result.audio.local.direction && result.audio.remote.direction) {
+                    const localCanSend = result.audio.local.direction === 'sendrecv' || result.audio.local.direction === 'sendonly';
+                    const localCanReceive = result.audio.local.direction === 'sendrecv' || result.audio.local.direction === 'recvonly';
+                    const remoteCanSend = result.audio.remote.direction === 'sendrecv' || result.audio.remote.direction === 'sendonly';
+                    const remoteCanReceive = result.audio.remote.direction === 'sendrecv' || result.audio.remote.direction === 'recvonly';
+                    
+                    // For audio to work in both directions:
+                    // 1. Local must be able to send and remote must be able to receive (for local->remote audio)
+                    // 2. Remote must be able to send and local must be able to receive (for remote->local audio)
+                    
+                    if (!(localCanSend && remoteCanReceive)) {
+                        issues.push('Local audio cannot be sent to remote (check local sendrecv/sendonly and remote sendrecv/recvonly)');
+                        audioShouldWork = false;
+                    }
+                    
+                    if (!(remoteCanSend && localCanReceive)) {
+                        issues.push('Remote audio cannot be sent to local (check remote sendrecv/sendonly and local sendrecv/recvonly)');
+                        audioShouldWork = false;
+                    }
+                } else {
+                    issues.push('Missing audio direction attributes in SDP');
+                    audioShouldWork = false;
+                }
+                
+                // Check for matching codecs
+                const matchingCodecs = result.audio.local.codecs.filter(localCodec =>
+                    result.audio.remote.codecs.some(remoteCodec =>
+                        localCodec.name.toLowerCase() === remoteCodec.name.toLowerCase()
+                    )
+                );
+                
+                if (matchingCodecs.length === 0) {
+                    issues.push('No matching audio codecs found between local and remote');
+                    audioShouldWork = false;
+                }
+                
+                // Check ICE candidates
+                if (result.ice.candidates.local === 0 || result.ice.candidates.remote === 0) {
+                    issues.push('Missing ICE candidates (local: ' + result.ice.candidates.local +
+                                ', remote: ' + result.ice.candidates.remote + ')');
+                    audioShouldWork = false;
+                }
+                
+                // Check ICE connection state
+                if (result.ice.state !== 'connected' && result.ice.state !== 'completed') {
+                    issues.push('ICE connection is not established (state: ' + result.ice.state + ')');
+                    audioShouldWork = false;
+                }
+                
+                if (!audioShouldWork) {
+                    message = 'Audio issues detected: ' + issues.join('; ');
+                }
+                
+                return {
+                    success: audioShouldWork,
+                    message: message,
+                    details: result
+                };
+            } else {
+                return {
+                    success: false,
+                    message: 'No peer connection found in session description handler',
+                    details: { error: 'No peer connection found' }
+                };
+            }
+        } else {
+            return {
+                success: false,
+                message: 'No session description handler found in session',
+                details: { error: 'No session description handler found' }
+            };
+        }
+    } catch (error) {
+        console.error('Error analyzing SDP:', error);
+        return {
+            success: false,
+            message: 'Error analyzing SDP: ' + (error instanceof Error ? error.message : String(error)),
+            details: { error: String(error) }
+        };
+    }
 }
 
 /**
