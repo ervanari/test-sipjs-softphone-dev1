@@ -339,14 +339,11 @@ const getRemoteAudioElement = (): HTMLAudioElement => {
     // Check if we already have an audio element
     let audio = document.getElementById('remote-audio') as HTMLAudioElement;
     if (!audio) {
-        // Create a new audio element if one doesn't exist
         audio = document.createElement('audio');
         audio.id = 'remote-audio';
         audio.autoplay = true;
-        audio.playsInline = true;
-        // Add controls for debugging purposes
+        (audio as any).playsInline = true;
         audio.controls = true;
-        // Hide the element but keep it functional
         audio.style.position = 'absolute';
         audio.style.top = '-1px';
         audio.style.left = '-1px';
@@ -475,8 +472,8 @@ export async function makeCall(target: string, withVideo = true, userId: string 
                     video: withVideo,
                 },
                 // Add ICE servers configuration
-                iceGatheringTimeout: 5000,
-                iceServers: iceServers
+                // iceGatheringTimeout: 5000,
+                // iceServers: iceServers
             },
         });
         
@@ -939,9 +936,8 @@ export async function acceptCall(invitation: Invitation, withVideo = true, userI
                     audio: true,
                     video: withVideo,
                 },
-                // Add ICE servers configuration
-                iceGatheringTimeout: 5000,
-                iceServers: iceServers
+                // iceGatheringTimeout: 5000,
+                // iceServers: iceServers
             },
         });
         
@@ -1614,8 +1610,8 @@ export function analyzeSdp(): { success: boolean; message: string; details: any 
                 }
                 
                 // Check for matching codecs
-                const matchingCodecs = result.audio.local.codecs.filter(localCodec =>
-                    result.audio.remote.codecs.some(remoteCodec =>
+                const matchingCodecs = result.audio.local.codecs.filter((localCodec: { name: string; }) =>
+                    result.audio.remote.codecs.some((remoteCodec: { name: string; }) =>
                         localCodec.name.toLowerCase() === remoteCodec.name.toLowerCase()
                     )
                 );
